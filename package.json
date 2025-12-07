@@ -1,0 +1,17 @@
+{
+  "name": "jjback",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "node api/server.js"
+  },
+  "dependencies": {
+    "express": "^4.22.1",
+    "cors": "^2.8.5",
+    "cookie-parser": "^1.4.7",
+    "@prisma/client": "^5.19.1"
+  },
+  "devDependencies": {
+    "prisma": "^5.19.1"
+  }
+}
