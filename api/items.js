@@ -1,10 +1,11 @@
 import { PrismaClient } from "@prisma/client";
 
+// Vercel 서버리스에서 커넥션 재사용을 위해 전역에 한 번만 생성
 let prisma;
-if (!globalThis.prisma) {
-  globalThis.prisma = new PrismaClient();
+if (!globalThis._prisma) {
+  globalThis._prisma = new PrismaClient();
 }
-prisma = globalThis.prisma;
+prisma = globalThis._prisma;
 
 const ALLOWED_ORIGINS = [
   "https://orange-fanta-one.vercel.app",
@@ -21,14 +22,17 @@ function setCors(req, res) {
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
 }
 
+// /api/items 엔드포인트
 export default async function handler(req, res) {
   setCors(req, res);
 
+  // 프리플라이트 요청
   if (req.method === "OPTIONS") {
     res.status(200).end();
     return;
   }
 
+  // ---------------- GET /api/items ----------------
   if (req.method === "GET") {
     try {
       const items = await prisma.item.findMany({
@@ -37,13 +41,17 @@ export default async function handler(req, res) {
       res.status(200).json(items);
     } catch (err) {
       console.error("GET /api/items error", err);
-      res
-        .status(500)
-        .json({ ok: false, message: "서버 에러(GET /api/items)" });
+      res.status(500).json({
+        ok: false,
+        message: "서버 에러(GET /api/items)",
+        error: String(err?.message || err),
+        code: err?.code || null,
+      });
     }
     return;
   }
 
+  // ---------------- POST /api/items ----------------
   if (req.method === "POST") {
     try {
       const { name, size, imageUrl } = req.body || {};
@@ -66,13 +74,17 @@ export default async function handler(req, res) {
       res.status(201).json(newItem);
     } catch (err) {
       console.error("POST /api/items error", err);
-      res
-        .status(500)
-        .json({ ok: false, message: "서버 에러(POST /api/items)" });
+      res.status(500).json({
+        ok: false,
+        message: "서버 에러(POST /api/items)",
+        error: String(err?.message || err),
+        code: err?.code || null,
+      });
     }
     return;
   }
 
+  // 그 밖의 메서드는 허용 안 함
   res.setHeader("Allow", "GET,POST,OPTIONS");
   res.status(405).end("Method Not Allowed");
 }
