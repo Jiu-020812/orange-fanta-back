@@ -3,7 +3,10 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "dev": "node api/server.js"
+    "dev": "node api/server.js",
+    "prisma:generate": "prisma generate",
+    "postinstall": "prisma generate"
+    
   },
   "dependencies": {
     "@prisma/client": "^5.19.1",
