@@ -1,4 +1,3 @@
-import serverless from "serverless-http";
-import app from "./server.js";
-
-export default serverless(app);
+export default function handler(req, res) {
+    res.status(200).json({ ok: true, message: "orange-fanta-back alive" });
+  }
