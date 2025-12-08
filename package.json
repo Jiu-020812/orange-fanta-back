@@ -2,6 +2,7 @@
   "name": "jjback",
   "version": "1.0.0",
   "type": "module",
+  "main": "api/index.js",
   "scripts": {
     "dev": "node api/server.js",
     "prisma:generate": "prisma generate",

@@ -20,30 +20,32 @@ app.use(
 app.use(express.json());
 app.use(cookieParser());
 
-// 서버 상태 체크
+// 헬스체크용
 app.get("/", (req, res) => {
-  res.json({ ok: true, message: "Backend running with Prisma DB (Vercel)" });
+  res.json({ ok: true, message: "Backend running with Prisma + Supabase" });
 });
 
 /* --------------------------- ITEMS --------------------------- */
 
-// ❗ 여기부터 경로에서 /api 제거
-
-// GET /items - 모든 상품 가져오기
-app.get("/items", async (req, res) => {
+// GET /api/items - 모든 상품 가져오기
+app.get("/api/items", async (req, res) => {
   try {
     const items = await prisma.item.findMany({
       orderBy: [{ createdAt: "asc" }, { id: "asc" }],
     });
-    res.json(items);
+    res.status(200).json(items);
   } catch (err) {
-    console.error("GET /items error", err);
-    res.status(500).json({ ok: false, message: "서버 에러" });
+    console.error("GET /api/items error", err);
+    res.status(500).json({
+      ok: false,
+      message: "서버 에러(GET /api/items)",
+      error: String(err),
+    });
   }
 });
 
-// POST /items - 새로운 상품 생성
-app.post("/items", async (req, res) => {
+// POST /api/items - 새로운 상품 생성
+app.post("/api/items", async (req, res) => {
   try {
     const { name, size, imageUrl } = req.body;
 
@@ -63,15 +65,19 @@ app.post("/items", async (req, res) => {
 
     res.status(201).json(newItem);
   } catch (err) {
-    console.error("POST /items error", err);
-    res.status(500).json({ ok: false, message: "서버 에러" });
+    console.error("POST /api/items error", err);
+    res.status(500).json({
+      ok: false,
+      message: "서버 에러(POST /api/items)",
+      error: String(err),
+    });
   }
 });
 
 /* --------------------------- RECORDS --------------------------- */
 
-// GET /items/:itemId/records
-app.get("/items/:itemId/records", async (req, res) => {
+// GET /api/items/:itemId/records
+app.get("/api/items/:itemId/records", async (req, res) => {
   const itemId = Number(req.params.itemId);
 
   if (Number.isNaN(itemId)) {
@@ -85,15 +91,19 @@ app.get("/items/:itemId/records", async (req, res) => {
       where: { itemId },
       orderBy: [{ date: "asc" }, { id: "asc" }],
     });
-    res.json(records);
+    res.status(200).json(records);
   } catch (err) {
-    console.error("GET /items/:itemId/records error", err);
-    res.status(500).json({ ok: false, message: "서버 에러" });
+    console.error("GET /api/items/:itemId/records error", err);
+    res.status(500).json({
+      ok: false,
+      message: "서버 에러(GET /records)",
+      error: String(err),
+    });
   }
 });
 
-// POST /items/:itemId/records
-app.post("/items/:itemId/records", async (req, res) => {
+// POST /api/items/:itemId/records
+app.post("/api/items/:itemId/records", async (req, res) => {
   const itemId = Number(req.params.itemId);
 
   if (Number.isNaN(itemId)) {
@@ -122,11 +132,14 @@ app.post("/items/:itemId/records", async (req, res) => {
 
     res.status(201).json(newRecord);
   } catch (err) {
-    console.error("POST /items/:itemId/records error", err);
-    res.status(500).json({ ok: false, message: "서버 에러" });
+    console.error("POST /api/items/:itemId/records error", err);
+    res.status(500).json({
+      ok: false,
+      message: "서버 에러(POST /records)",
+      error: String(err),
+    });
   }
 });
 
-/* --------------------------- VERCEL EXPORT --------------------------- */
-
+// Vercel용: Express 앱만 export
 export default app;
