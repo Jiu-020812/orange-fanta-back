@@ -9,10 +9,14 @@ const prisma = new PrismaClient();
 // CORS 설정
 app.use(
   cors({
-    origin: "*", // Vercel에서는 * 또는 특정 도메인 허용 필요
+    origin: [
+      "https://orange-fanta-one.vercel.app", // 프론트 배포 주소
+      "http://localhost:5173",               // 로컬 개발용
+    ],
     credentials: true,
   })
 );
+
 
 app.use(express.json());
 app.use(cookieParser());
