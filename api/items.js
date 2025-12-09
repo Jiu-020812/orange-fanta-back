@@ -12,6 +12,8 @@ const ALLOWED_ORIGINS = [
   "http://localhost:5173",
 ];
 
+const FIXED_USER_ID = 1; // TODO: 로그인 붙이면 실제 로그인 유저 ID로 교체
+
 function setCors(req, res) {
   const origin = req.headers.origin || "";
 
@@ -47,6 +49,7 @@ export default async function handler(req, res) {
   if (req.method === "GET") {
     try {
       const items = await prisma.item.findMany({
+        where: { userId: FIXED_USER_ID },
         orderBy: [{ createdAt: "asc" }, { id: "asc" }],
       });
       res.status(200).json(items);
@@ -76,6 +79,7 @@ export default async function handler(req, res) {
 
       const newItem = await prisma.item.create({
         data: {
+          userId: FIXED_USER_ID,
           name,
           size,
           imageUrl: imageUrl || null,
