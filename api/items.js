@@ -13,11 +13,22 @@ const ALLOWED_ORIGINS = [
 ];
 
 function setCors(req, res) {
-  const origin = req.headers.origin;
-  if (origin && ALLOWED_ORIGINS.includes(origin)) {
+  const origin = req.headers.origin || "";
+
+  // 로컬 환경이면 포트 상관없이 모두 허용 (http://localhost:*****)
+  if (origin.startsWith("http://localhost")) {
     res.setHeader("Access-Control-Allow-Origin", origin);
     res.setHeader("Access-Control-Allow-Credentials", "true");
   }
+ 
+   // 배포 환경에서는 기존 origin만 허용
+   if (
+    origin === "https://orange-fanta-one.vercel.app"
+  ) {
+    res.setHeader("Access-Control-Allow-Origin", origin);
+    res.setHeader("Access-Control-Allow-Credentials", "true");
+  }
+
   res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
 }
