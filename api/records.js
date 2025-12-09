@@ -103,7 +103,68 @@ export default async function handler(req, res) {
     }
     return;
   }
+   // ---------------- PUT /api/records (기록 수정) ----------------
+   if (req.method === "PUT") {
+    try {
+      const { id, price, count, date } = req.body || {};
 
-  res.setHeader("Allow", "GET,POST,OPTIONS");
+      const numericId = Number(id);
+      if (!numericId || Number.isNaN(numericId)) {
+        res
+          .status(400)
+          .json({ ok: false, message: "id가 잘못되었습니다." });
+        return;
+      }
+
+      const data = {};
+      if (price != null) data.price = Number(price);
+      if (count != null) data.count = Number(count);
+      if (date) data.date = new Date(date);
+
+      const updated = await prisma.record.update({
+        where: { id: numericId },
+        data,
+      });
+
+      res.status(200).json(updated);
+    } catch (err) {
+      console.error("PUT /api/records error", err);
+      res.status(500).json({
+        ok: false,
+        message: "서버 에러(PUT /api/records)",
+        error: String(err?.message || err),
+      });
+    }
+    return;
+  }
+
+  // ---------------- DELETE /api/records (기록 삭제) ----------------
+  if (req.method === "DELETE") {
+    const numericId = Number(req.query.id || req.body?.id);
+
+    if (!numericId || Number.isNaN(numericId)) {
+      res
+        .status(400)
+        .json({ ok: false, message: "id 쿼리 파라미터가 필요합니다." });
+      return;
+    }
+
+    try {
+      await prisma.record.delete({
+        where: { id: numericId },
+      });
+      res.status(204).end();
+    } catch (err) {
+      console.error("DELETE /api/records error", err);
+      res.status(500).json({
+        ok: false,
+        message: "서버 에러(DELETE /api/records)",
+        error: String(err?.message || err),
+      });
+    }
+    return;
+  }
+
+  res.setHeader("Allow", "GET,POST,DELETE,OPTIONS");
   res.status(405).end("Method Not Allowed");
 }
