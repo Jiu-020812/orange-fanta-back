@@ -1,44 +1,24 @@
 import { PrismaClient } from "@prisma/client";
 
-// Vercel 서버리스에서 커넥션 재사용을 위해 전역에 한 번만 생성
 let prisma;
-if (!globalThis._prisma) {
-  globalThis._prisma = new PrismaClient();
+if (!globalThis.prisma) {
+  globalThis.prisma = new PrismaClient();
 }
-prisma = globalThis._prisma;
+prisma = globalThis.prisma;
 
 const ALLOWED_ORIGINS = [
   "https://orange-fanta-one.vercel.app",
   "http://localhost:5173",
-  "http://localhost:5175",
 ];
 
 function setCors(req, res) {
-    const origin = req.headers.origin || "";
-  
-    const isLocalhost = origin.startsWith("http://localhost");
-    const isAllowedOrigin =
-      ALLOWED_ORIGINS.includes(origin) || isLocalhost;
-  
-    if (origin && isAllowedOrigin) {
-      res.setHeader("Access-Control-Allow-Origin", origin);
-      res.setHeader("Access-Control-Allow-Credentials", "true");
-    }
-  
-    res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
-    res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+  const origin = req.headers.origin;
+  if (origin && ALLOWED_ORIGINS.includes(origin)) {
+    res.setHeader("Access-Control-Allow-Origin", origin);
+    res.setHeader("Access-Control-Allow-Credentials", "true");
   }
-
-/**
- * TODO: 로그인 붙인 후 여기를 실제 유저 정보로 교체
- * 지금은 2세대 구조 테스트용으로 userId = 1 고정
- */
-function getCurrentUserId(req) {
-  // 나중에 쿠키/세션/토큰에서 꺼내 쓰도록 변경 예정
-  // const userIdFromToken = ...
-  // return userIdFromToken;
-
-  return 1; // 임시
+  res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
 }
 
 export default async function handler(req, res) {
@@ -49,11 +29,7 @@ export default async function handler(req, res) {
     return;
   }
 
-  const method = req.method;
-  const userId = getCurrentUserId(req);
-
-  // ---------------- GET /api/records ----------------
-  if (method === "GET") {
+  if (req.method === "GET") {
     const itemId = Number(req.query.itemId);
 
     if (!itemId || Number.isNaN(itemId)) {
@@ -65,31 +41,20 @@ export default async function handler(req, res) {
 
     try {
       const records = await prisma.record.findMany({
-        where: {
-          itemId,
-          userId, // 🔹 해당 유저 + 해당 품목에 대한 기록만
-        },
-        orderBy: [
-          { date: "asc" },
-          { id: "asc" },
-        ],
+        where: { itemId },
+        orderBy: [{ date: "asc" }, { id: "asc" }],
       });
-
       res.status(200).json(records);
     } catch (err) {
       console.error("GET /api/records error", err);
-      res.status(500).json({
-        ok: false,
-        message: "서버 에러(GET /api/records)",
-        error: String(err?.message || err),
-        code: err?.code || null,
-      });
+      res
+        .status(500)
+        .json({ ok: false, message: "서버 에러(GET /api/records)" });
     }
     return;
   }
 
-  // ---------------- POST /api/records ----------------
-  if (method === "POST") {
+  if (req.method === "POST") {
     try {
       const { itemId, price, count, date } = req.body || {};
 
@@ -114,19 +79,15 @@ export default async function handler(req, res) {
           price: Number(price),
           count: count == null ? 1 : Number(count),
           date: date ? new Date(date) : new Date(),
-          userId, // 🔹 이 기록이 어느 유저 것인지 저장
         },
       });
 
       res.status(201).json(newRecord);
     } catch (err) {
       console.error("POST /api/records error", err);
-      res.status(500).json({
-        ok: false,
-        message: "서버 에러(POST /api/records)",
-        error: String(err?.message || err),
-        code: err?.code || null,
-      });
+      res
+        .status(500)
+        .json({ ok: false, message: "서버 에러(POST /api/records)" });
     }
     return;
   }
