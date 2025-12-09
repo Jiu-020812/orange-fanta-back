@@ -12,25 +12,12 @@ const ALLOWED_ORIGINS = [
   "http://localhost:5173",
 ];
 
-const FIXED_USER_ID = 1; // TODO: 로그인 붙이면 실제 로그인 유저 ID로 교체
-
 function setCors(req, res) {
-  const origin = req.headers.origin || "";
-
-  // 로컬 환경이면 포트 상관없이 모두 허용 (http://localhost:*****)
-  if (origin.startsWith("http://localhost")) {
+  const origin = req.headers.origin;
+  if (origin && ALLOWED_ORIGINS.includes(origin)) {
     res.setHeader("Access-Control-Allow-Origin", origin);
     res.setHeader("Access-Control-Allow-Credentials", "true");
   }
- 
-   // 배포 환경에서는 기존 origin만 허용
-   if (
-    origin === "https://orange-fanta-one.vercel.app"
-  ) {
-    res.setHeader("Access-Control-Allow-Origin", origin);
-    res.setHeader("Access-Control-Allow-Credentials", "true");
-  }
-
   res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
 }
@@ -49,7 +36,6 @@ export default async function handler(req, res) {
   if (req.method === "GET") {
     try {
       const items = await prisma.item.findMany({
-        where: { userId: FIXED_USER_ID },
         orderBy: [{ createdAt: "asc" }, { id: "asc" }],
       });
       res.status(200).json(items);
@@ -79,7 +65,6 @@ export default async function handler(req, res) {
 
       const newItem = await prisma.item.create({
         data: {
-          userId: FIXED_USER_ID,
           name,
           size,
           imageUrl: imageUrl || null,
