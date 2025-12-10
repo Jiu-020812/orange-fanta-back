@@ -19,7 +19,8 @@ function setCors(req, res) {
     res.setHeader("Access-Control-Allow-Origin", origin);
     res.setHeader("Access-Control-Allow-Credentials", "true");
   }
-  res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
+  // 🔹 DELETE까지 포함
+  res.setHeader("Access-Control-Allow-Methods", "GET,POST,DELETE,OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
 }
 
@@ -85,7 +86,40 @@ export default async function handler(req, res) {
     return;
   }
 
+  // ---------------- DELETE /api/items?id=123 ----------------
+  if (req.method === "DELETE") {
+    const id = Number(req.query.id);
+    if (!id || Number.isNaN(id)) {
+      res
+        .status(400)
+        .json({ ok: false, message: "id 쿼리 파라미터가 필요합니다." });
+      return;
+    }
+
+    try {
+      // 1) 먼저 이 아이템의 기록들 삭제
+      await prisma.record.deleteMany({
+        where: { itemId: id },
+      });
+
+      // 2) 아이템 삭제
+      await prisma.item.delete({
+        where: { id },
+      });
+
+      res.status(204).end();
+    } catch (err) {
+      console.error("DELETE /api/items error", err);
+      res.status(500).json({
+        ok: false,
+        message: "서버 에러(DELETE /api/items)",
+        error: String(err?.message || err),
+      });
+    }
+    return;
+  }
+
   // 그 밖의 메서드는 허용 안 함
-  res.setHeader("Allow", "GET,POST,OPTIONS");
+  res.setHeader("Allow", "GET,POST,DELETE,OPTIONS");
   res.status(405).end("Method Not Allowed");
 }

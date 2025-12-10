@@ -11,7 +11,8 @@ app.use(
   cors({
     origin: [
       "https://orange-fanta-one.vercel.app", // 프론트 배포 주소
-      "http://localhost:5173",               // 로컬 개발용
+      "http://localhost:5173",
+      "http://localhost:5175",               // 로컬 개발용
     ],
     credentials: true,
   })
