@@ -9,6 +9,7 @@ prisma = globalThis.prisma;
 const ALLOWED_ORIGINS = [
   "https://orange-fanta-one.vercel.app",
   "http://localhost:5173",
+  "http://localhost:5175",
 ];
 
 function setCors(req, res) {
