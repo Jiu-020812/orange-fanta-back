@@ -9,11 +9,11 @@ const router = express.Router();
 const JWT_SECRET = process.env.JWT_SECRET || "dev-secret-key";
 const COOKIE_NAME = "token";
 const COOKIE_OPTIONS = {
-  httpOnly: true,
-  secure: process.env.NODE_ENV === "production",
-  sameSite: "lax",
-  path: "/",
-};
+    httpOnly: true,
+    secure: true,       // Vercel에서는 항상 true
+    sameSite: "none",   // 크로스 사이트 쿠키 필수
+    path: "/",
+  };
 
 // 토큰 생성 함수
 function createToken(userId) {
@@ -113,8 +113,12 @@ router.get("/me", async (req, res) => {
 /* --------------------------- LOGOUT --------------------------- */
 // POST /api/auth/logout
 router.post("/logout", (req, res) => {
-  res.clearCookie(COOKIE_NAME, { path: "/" });
-  res.json({ ok: true });
-});
+    res.clearCookie(COOKIE_NAME, {
+      path: "/",
+      secure: true,
+      sameSite: "none",
+    });
+    res.json({ ok: true });
+  });
 
 export default router;
