@@ -90,6 +90,7 @@ router.get("/me", async (req, res) => {
   try {
 
     console.log("🍪 /me cookies:", req.cookies);  // <<< 추가
+    
     const token = req.cookies?.token;
     if (!token) {
       return res.status(401).json({ message: "로그인이 필요합니다." });
