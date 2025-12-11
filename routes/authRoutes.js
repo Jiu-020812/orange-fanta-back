@@ -12,8 +12,8 @@ const COOKIE_NAME = "token";
 // Vercel + 크로스 도메인용 쿠키 옵션
 const COOKIE_OPTIONS = {
   httpOnly: true,
-  secure: true,
-  sameSite: "none",
+  secure: true,     // Vercel 배포 환경에서는 항상 true
+  sameSite: "none", // 크로스 사이트 쿠키
   path: "/",
 };
 
@@ -40,17 +40,27 @@ router.post("/signup", async (req, res) => {
   try {
     const { email, password, name } = req.body;
 
+    console.log("📨 SIGNUP body:", req.body);
+
     if (!email || !password) {
       return res
         .status(400)
-        .json({ ok: false, reason: "MISSING_FIELDS", message: "이메일과 비밀번호는 필수입니다." });
+        .json({
+          ok: false,
+          reason: "MISSING_FIELDS",
+          message: "이메일과 비밀번호는 필수입니다.",
+        });
     }
 
     const existing = await prisma.user.findUnique({ where: { email } });
     if (existing) {
       return res
         .status(409)
-        .json({ ok: false, reason: "DUPLICATE_EMAIL", message: "이미 존재하는 이메일입니다." });
+        .json({
+          ok: false,
+          reason: "DUPLICATE_EMAIL",
+          message: "이미 존재하는 이메일입니다.",
+        });
     }
 
     const hashed = await bcrypt.hash(password, 10);
@@ -65,7 +75,6 @@ router.post("/signup", async (req, res) => {
 
     const token = createToken(user.id);
 
-    // ✅ 의도적으로 구조를 눈에 띄게 바꿔둠
     res
       .cookie(COOKIE_NAME, token, COOKIE_OPTIONS)
       .status(201)
@@ -73,13 +82,17 @@ router.post("/signup", async (req, res) => {
         ok: true,
         mode: "signup",
         user: { id: user.id, email: user.email, name: user.name },
-        token,
+        token, // ⬅⬅ **여기 꼭 들어가야 함**
       });
   } catch (err) {
     console.error("❌ POST /api/auth/signup 에러:", err);
     res
       .status(500)
-      .json({ ok: false, reason: "SERVER_ERROR", message: "회원가입 중 서버 오류가 발생했습니다." });
+      .json({
+        ok: false,
+        reason: "SERVER_ERROR",
+        message: "회원가입 중 서버 오류가 발생했습니다.",
+      });
   }
 });
 
@@ -89,18 +102,28 @@ router.post("/login", async (req, res) => {
   try {
     const { email, password } = req.body;
 
+    console.log("📨 LOGIN body:", req.body);
+
     const user = await prisma.user.findUnique({ where: { email } });
     if (!user) {
       return res
         .status(401)
-        .json({ ok: false, reason: "INVALID_CREDENTIALS", message: "이메일 또는 비밀번호가 올바르지 않습니다." });
+        .json({
+          ok: false,
+          reason: "INVALID_CREDENTIALS",
+          message: "이메일 또는 비밀번호가 올바르지 않습니다.",
+        });
     }
 
     const okPassword = await bcrypt.compare(password, user.password);
     if (!okPassword) {
       return res
         .status(401)
-        .json({ ok: false, reason: "INVALID_CREDENTIALS", message: "이메일 또는 비밀번호가 올바르지 않습니다." });
+        .json({
+          ok: false,
+          reason: "INVALID_CREDENTIALS",
+          message: "이메일 또는 비밀번호가 올바르지 않습니다.",
+        });
     }
 
     const token = createToken(user.id);
@@ -111,13 +134,17 @@ router.post("/login", async (req, res) => {
         ok: true,
         mode: "login",
         user: { id: user.id, email: user.email, name: user.name },
-        token,
+        token, // ⬅⬅ **여기도 반드시 포함**
       });
   } catch (err) {
     console.error("❌ POST /api/auth/login 에러:", err);
     res
       .status(500)
-      .json({ ok: false, reason: "SERVER_ERROR", message: "로그인 중 서버 오류가 발생했습니다." });
+      .json({
+        ok: false,
+        reason: "SERVER_ERROR",
+        message: "로그인 중 서버 오류가 발생했습니다.",
+      });
   }
 });
 
@@ -126,11 +153,16 @@ router.post("/login", async (req, res) => {
 router.get("/me", async (req, res) => {
   try {
     const token = getTokenFromReq(req);
+    console.log("🔍 /me token from req:", token ? "있음" : "없음");
 
     if (!token) {
       return res
         .status(401)
-        .json({ ok: false, reason: "NO_TOKEN", message: "로그인이 필요합니다." });
+        .json({
+          ok: false,
+          reason: "NO_TOKEN",
+          message: "로그인이 필요합니다.",
+        });
     }
 
     const payload = jwt.verify(token, JWT_SECRET);
@@ -143,7 +175,11 @@ router.get("/me", async (req, res) => {
     if (!user) {
       return res
         .status(401)
-        .json({ ok: false, reason: "USER_NOT_FOUND", message: "사용자를 찾을 수 없습니다." });
+        .json({
+          ok: false,
+          reason: "USER_NOT_FOUND",
+          message: "사용자를 찾을 수 없습니다.",
+        });
     }
 
     res.json({ ok: true, user });
