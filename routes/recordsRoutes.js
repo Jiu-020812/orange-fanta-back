@@ -4,46 +4,74 @@ import { PrismaClient } from "@prisma/client";
 const prisma = new PrismaClient();
 const router = express.Router();
 
-// 특정 아이템의 기록 조회
-router.get("/:itemId/records", async (req, res) => {
-  try {
-    const itemId = Number(req.params.itemId);
+/* --------------------------- RECORDS --------------------------- */
 
+// GET /api/items/:itemId/records
+router.get("/:itemId/records", async (req, res) => {
+  const itemId = Number(req.params.itemId);
+
+  if (Number.isNaN(itemId)) {
+    return res
+      .status(400)
+      .json({ ok: false, message: "itemId가 잘못되었습니다." });
+  }
+
+  try {
     const records = await prisma.record.findMany({
       where: {
         itemId,
-        userId: req.userId,  // 🔥 로그인한 사용자 기록만
+        userId: req.userId, // 🔥 본인 데이터만
       },
-      orderBy: { date: "desc" },
+      orderBy: [{ date: "asc" }, { id: "asc" }],
     });
-
-    res.json(records);
+    res.status(200).json(records);
   } catch (err) {
-    console.error("❌ GET records 오류:", err);
-    res.status(500).json({ message: "서버 오류" });
+    console.error("GET /api/items/:itemId/records error", err);
+    res.status(500).json({
+      ok: false,
+      message: "서버 에러(GET /records)",
+      error: String(err),
+    });
   }
 });
 
-// 기록 추가
+// POST /api/items/:itemId/records
 router.post("/:itemId/records", async (req, res) => {
+  const itemId = Number(req.params.itemId);
+
+  if (Number.isNaN(itemId)) {
+    return res
+      .status(400)
+      .json({ ok: false, message: "itemId가 잘못되었습니다." });
+  }
+
   try {
-    const itemId = Number(req.params.itemId);
     const { price, count, date } = req.body;
 
-    const record = await prisma.record.create({
+    if (price == null) {
+      return res
+        .status(400)
+        .json({ ok: false, message: "price는 필수입니다." });
+    }
+
+    const newRecord = await prisma.record.create({
       data: {
         itemId,
-        price,
-        count,
-        date,
-        userId: req.userId,  // 🔥 반드시 필요!
+        price: Number(price),
+        count: count == null ? 1 : Number(count),
+        date: date ? new Date(date) : new Date(),
+        userId: req.userId, // 🔥 로그인 유저 ID 저장
       },
     });
 
-    res.status(201).json(record);
+    res.status(201).json(newRecord);
   } catch (err) {
-    console.error("❌ POST record 오류:", err);
-    res.status(500).json({ message: "서버 오류" });
+    console.error("POST /api/items/:itemId/records error", err);
+    res.status(500).json({
+      ok: false,
+      message: "서버 에러(POST /records)",
+      error: String(err),
+    });
   }
 });
 

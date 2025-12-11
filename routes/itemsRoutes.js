@@ -4,38 +4,54 @@ import { PrismaClient } from "@prisma/client";
 const prisma = new PrismaClient();
 const router = express.Router();
 
-// 아이템 목록 조회 (로그인 유저만)
+/* --------------------------- ITEMS --------------------------- */
+
+// GET /api/items - 로그인한 유저의 모든 상품 가져오기
 router.get("/", async (req, res) => {
   try {
     const items = await prisma.item.findMany({
-      where: { userId: req.userId },  // 🔥 로그인한 사용자 데이터만!
-      orderBy: { createdAt: "desc" },
+      where: { userId: req.userId }, // 🔥 로그인 유저 기준
+      orderBy: [{ createdAt: "asc" }, { id: "asc" }],
     });
-    res.json(items);
+    res.status(200).json(items);
   } catch (err) {
-    console.error("❌ GET /items 오류:", err);
-    res.status(500).json({ message: "서버 오류" });
+    console.error("GET /api/items error", err);
+    res.status(500).json({
+      ok: false,
+      message: "서버 에러(GET /api/items)",
+      error: String(err),
+    });
   }
 });
 
-// 아이템 생성
+// POST /api/items - 새로운 상품 생성
 router.post("/", async (req, res) => {
   try {
     const { name, size, imageUrl } = req.body;
 
-    const item = await prisma.item.create({
+    if (!name || !size) {
+      return res
+        .status(400)
+        .json({ ok: false, message: "name과 size는 필수입니다." });
+    }
+
+    const newItem = await prisma.item.create({
       data: {
         name,
         size,
-        imageUrl: imageUrl ?? null,
-        userId: req.userId,  // 🔥 로그인한 사용자 ID 저장
+        imageUrl: imageUrl || null,
+        userId: req.userId, // 🔥 로그인 유저 ID 저장
       },
     });
 
-    res.status(201).json(item);
+    res.status(201).json(newItem);
   } catch (err) {
-    console.error("❌ POST /items 오류:", err);
-    res.status(500).json({ message: "서버 오류" });
+    console.error("POST /api/items error", err);
+    res.status(500).json({
+      ok: false,
+      message: "서버 에러(POST /api/items)",
+      error: String(err),
+    });
   }
 });
 

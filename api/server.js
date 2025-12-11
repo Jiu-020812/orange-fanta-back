@@ -1,155 +1,56 @@
 import express from "express";
 import cookieParser from "cookie-parser";
+import cors from "cors";
+import { PrismaClient } from "@prisma/client";
+
 import authRoutes from "./routes/authRoutes.js";
 import { requireAuth } from "./middleware/requireAuth.js";
 import itemsRoutes from "./routes/itemsRoutes.js";
 import recordsRoutes from "./routes/recordsRoutes.js";
 
-
 const app = express();
 const prisma = new PrismaClient();
 
-// CORS 설정
-app.use(
-  cors({
-    origin: [
-      "https://orange-fanta-one.vercel.app", // 프론트 배포 주소
-      "http://localhost:5173",
-      "http://localhost:5175",               // 로컬 개발용
-    ],
-    credentials: true,
-  })
-);
+// ---------------- CORS 설정 ----------------
+const allowedOrigins = [
+  "https://orange-fanta-one.vercel.app", // 프론트 배포 주소
+  "http://localhost:5173",
+  "http://localhost:5175",               // 로컬 개발용
+];
+
+const corsOptions = {
+  origin(origin, callback) {
+    // origin 이 없는 경우 (예: Postman)은 허용
+    if (!origin) return callback(null, true);
+
+    if (allowedOrigins.includes(origin)) {
+      return callback(null, true);
+    }
+    return callback(new Error("Not allowed by CORS"), false);
+  },
+  credentials: true, // 쿠키 허용
+};
+
+// 🔥 모든 요청에 CORS 적용
+app.use(cors(corsOptions));
+// 🔥 preflight(OPTIONS) 요청도 CORS 통과
+app.options("*", cors(corsOptions));
 
 app.use(express.json());
 app.use(cookieParser());
-// 인증 라우트
-app.use("/api/auth", authRoutes);
-
-// 이후 라우트는 로그인 필요
-app.use("/api/items", requireAuth, itemsRoutes);
-app.use("/api/records", requireAuth, recordsRoutes);
 
 // 헬스체크용
 app.get("/", (req, res) => {
   res.json({ ok: true, message: "Backend running with Prisma + Supabase" });
 });
 
-/* --------------------------- ITEMS --------------------------- */
+// 인증 라우트
+app.use("/api/auth", authRoutes);
 
-// GET /api/items - 모든 상품 가져오기
-app.get("/api/items", async (req, res) => {
-  try {
-    const items = await prisma.item.findMany({
-      orderBy: [{ createdAt: "asc" }, { id: "asc" }],
-    });
-    res.status(200).json(items);
-  } catch (err) {
-    console.error("GET /api/items error", err);
-    res.status(500).json({
-      ok: false,
-      message: "서버 에러(GET /api/items)",
-      error: String(err),
-    });
-  }
-});
-
-// POST /api/items - 새로운 상품 생성
-app.post("/api/items", async (req, res) => {
-  try {
-    const { name, size, imageUrl } = req.body;
-
-    if (!name || !size) {
-      return res
-        .status(400)
-        .json({ ok: false, message: "name과 size는 필수입니다." });
-    }
-
-    const newItem = await prisma.item.create({
-      data: {
-        name,
-        size,
-        imageUrl: imageUrl || null,
-      },
-    });
-
-    res.status(201).json(newItem);
-  } catch (err) {
-    console.error("POST /api/items error", err);
-    res.status(500).json({
-      ok: false,
-      message: "서버 에러(POST /api/items)",
-      error: String(err),
-    });
-  }
-});
-
-/* --------------------------- RECORDS --------------------------- */
-
-// GET /api/items/:itemId/records
-app.get("/api/items/:itemId/records", async (req, res) => {
-  const itemId = Number(req.params.itemId);
-
-  if (Number.isNaN(itemId)) {
-    return res
-      .status(400)
-      .json({ ok: false, message: "itemId가 잘못되었습니다." });
-  }
-
-  try {
-    const records = await prisma.record.findMany({
-      where: { itemId },
-      orderBy: [{ date: "asc" }, { id: "asc" }],
-    });
-    res.status(200).json(records);
-  } catch (err) {
-    console.error("GET /api/items/:itemId/records error", err);
-    res.status(500).json({
-      ok: false,
-      message: "서버 에러(GET /records)",
-      error: String(err),
-    });
-  }
-});
-
-// POST /api/items/:itemId/records
-app.post("/api/items/:itemId/records", async (req, res) => {
-  const itemId = Number(req.params.itemId);
-
-  if (Number.isNaN(itemId)) {
-    return res
-      .status(400)
-      .json({ ok: false, message: "itemId가 잘못되었습니다." });
-  }
-
-  try {
-    const { price, count, date } = req.body;
-
-    if (price == null) {
-      return res
-        .status(400)
-        .json({ ok: false, message: "price는 필수입니다." });
-    }
-
-    const newRecord = await prisma.record.create({
-      data: {
-        itemId,
-        price: Number(price),
-        count: count == null ? 1 : Number(count),
-        date: date ? new Date(date) : new Date(),
-      },
-    });
-
-    res.status(201).json(newRecord);
-  } catch (err) {
-    console.error("POST /api/items/:itemId/records error", err);
-    res.status(500).json({
-      ok: false,
-      message: "서버 에러(POST /records)",
-      error: String(err),
-    });
-  }
-});
+// 이후 라우트는 로그인 필요
+app.use("/api/items", requireAuth, itemsRoutes);
+// /api/items/:itemId/records → recordsRoutes 에서 처리
+app.use("/api/items", requireAuth, recordsRoutes);
 
 // Vercel용: Express 앱만 export
 export default app;
