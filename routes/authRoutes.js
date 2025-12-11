@@ -9,11 +9,11 @@ const router = express.Router();
 const JWT_SECRET = process.env.JWT_SECRET || "dev-secret-key";
 const COOKIE_NAME = "token";
 
-// Vercel + 크로스 도메인용 쿠키 옵션
+// Vercel + 크로스 도메인 쿠키 옵션
 const COOKIE_OPTIONS = {
   httpOnly: true,
-  secure: true,      // Vercel에서는 항상 true (https)
-  sameSite: "none",  // 프론트/백 도메인이 달라서 필요
+  secure: true,      // Vercel(https) 이라서 true
+  sameSite: "none",  // 프론트/백 도메인 다르니까 none
   path: "/",
 };
 
@@ -22,12 +22,10 @@ function createToken(userId) {
   return jwt.sign({ userId }, JWT_SECRET, { expiresIn: "7d" });
 }
 
-// 요청에서 토큰 꺼내는 헬퍼 (쿠키 + Authorization 헤더 둘 다 지원)
+// 요청에서 토큰 꺼내는 함수 (쿠키 + Authorization 헤더 둘 다 지원)
 function getTokenFromReq(req) {
-  // 1) 쿠키 우선
   let token = req.cookies?.[COOKIE_NAME];
 
-  // 2) 없으면 Authorization: Bearer xxx 에서 시도
   const authHeader = req.headers.authorization;
   if (!token && authHeader && authHeader.startsWith("Bearer ")) {
     token = authHeader.slice(7); // "Bearer ".length === 7
@@ -65,7 +63,7 @@ router.post("/signup", async (req, res) => {
 
     const token = createToken(user.id);
 
-    // 쿠키 + 응답 JSON 둘 다로 토큰 전달
+    // ✅ 쿠키 + JSON 둘 다로 토큰 내려줌
     res
       .cookie(COOKIE_NAME, token, COOKIE_OPTIONS)
       .status(201)
@@ -103,7 +101,7 @@ router.post("/login", async (req, res) => {
 
     const token = createToken(user.id);
 
-    // 쿠키 + 응답 JSON 둘 다로 토큰 전달
+    // ✅ 여기서도 똑같이 user + token 내려줌
     res
       .cookie(COOKIE_NAME, token, COOKIE_OPTIONS)
       .json({
