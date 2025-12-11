@@ -4,10 +4,9 @@
   "type": "module",
   "main": "api/index.js",
   "scripts": {
-    "dev": "node api/server.js",
+    "dev": "node server.js",
     "prisma:generate": "prisma generate",
     "postinstall": "prisma generate"
-    
   },
   "dependencies": {
     "@prisma/client": "^5.19.1",
