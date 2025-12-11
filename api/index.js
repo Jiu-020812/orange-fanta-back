@@ -104,7 +104,7 @@ app.post("/api/auth/signup", async (req, res) => {
       .cookie("token", token, {
         httpOnly: true,
         secure: process.env.NODE_ENV === "production",
-        sameSite: "lax",
+        sameSite: "none",
         path: "/",
       })
       .status(201)
@@ -136,7 +136,7 @@ app.post("/api/auth/login", async (req, res) => {
       .cookie("token", token, {
         httpOnly: true,
         secure: process.env.NODE_ENV === "production",
-        sameSite: "lax",
+        sameSite: "none",
         path: "/",
       })
       .json({ id: user.id, email: user.email, name: user.name });
