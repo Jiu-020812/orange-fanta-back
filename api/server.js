@@ -20,7 +20,7 @@ const allowedOrigins = [
 
 const corsOptions = {
   origin(origin, callback) {
-    // origin 이 없는 경우 (예: Postman)은 허용
+    // origin 이 없는 경우(Postman 등)는 허용
     if (!origin) return callback(null, true);
 
     if (allowedOrigins.includes(origin)) {
@@ -29,13 +29,19 @@ const corsOptions = {
     return callback(new Error("Not allowed by CORS"), false);
   },
   credentials: true, // 쿠키 허용
+  methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization"],
 };
 
 // 🔥 모든 요청에 CORS 적용
 app.use(cors(corsOptions));
-// 🔥 preflight(OPTIONS) 요청도 CORS 통과
-app.options("*", cors(corsOptions));
 
+// 🔥 preflight(OPTIONS) 요청도 모든 /api 경로에서 통과시키기
+app.options("/api/*", cors(corsOptions));
+
+// --------------------------------------------------
+// 공통 미들웨어
+// --------------------------------------------------
 app.use(express.json());
 app.use(cookieParser());
 
@@ -44,12 +50,16 @@ app.get("/", (req, res) => {
   res.json({ ok: true, message: "Backend running with Prisma + Supabase" });
 });
 
-// 인증 라우트
+// --------------------------------------------------
+// 라우트 정의
+// --------------------------------------------------
+
+// 인증 (로그인/회원가입/로그아웃/내 정보)
 app.use("/api/auth", authRoutes);
 
 // 이후 라우트는 로그인 필요
 app.use("/api/items", requireAuth, itemsRoutes);
-// /api/items/:itemId/records → recordsRoutes 에서 처리
+// /api/items/:itemId/records
 app.use("/api/items", requireAuth, recordsRoutes);
 
 // Vercel용: Express 앱만 export
