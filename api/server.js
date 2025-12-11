@@ -1,6 +1,5 @@
 import express from "express";
 import cookieParser from "cookie-parser";
-import cors from "cors";
 import { PrismaClient } from "@prisma/client";
 
 import authRoutes from "./routes/authRoutes.js";
@@ -11,33 +10,40 @@ import recordsRoutes from "./routes/recordsRoutes.js";
 const app = express();
 const prisma = new PrismaClient();
 
-// ---------------- CORS 설정 ----------------
+// ---------------- CORS 직접 처리 ----------------
 const allowedOrigins = [
   "https://orange-fanta-one.vercel.app", // 프론트 배포 주소
   "http://localhost:5173",
   "http://localhost:5175",               // 로컬 개발용
 ];
 
-const corsOptions = {
-  origin(origin, callback) {
-    // origin 이 없는 경우(Postman 등)는 허용
-    if (!origin) return callback(null, true);
+app.use((req, res, next) => {
+  const origin = req.headers.origin;
 
-    if (allowedOrigins.includes(origin)) {
-      return callback(null, true);
-    }
-    return callback(new Error("Not allowed by CORS"), false);
-  },
-  credentials: true, // 쿠키 허용
-  methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-  allowedHeaders: ["Content-Type", "Authorization"],
-};
+  if (origin && allowedOrigins.includes(origin)) {
+    // 어떤 origin에서 왔는지 그대로 허용
+    res.header("Access-Control-Allow-Origin", origin);
+    res.header("Vary", "Origin");
+    res.header("Access-Control-Allow-Credentials", "true");
+  }
 
-// 🔥 모든 요청에 CORS 적용
-app.use(cors(corsOptions));
+  // 허용할 메서드 / 헤더
+  res.header(
+    "Access-Control-Allow-Methods",
+    "GET,POST,PUT,PATCH,DELETE,OPTIONS"
+  );
+  res.header(
+    "Access-Control-Allow-Headers",
+    "Content-Type, Authorization"
+  );
 
-// 🔥 preflight(OPTIONS) 요청도 모든 /api 경로에서 통과시키기
-app.options("/api/*", cors(corsOptions));
+  // 🔥 preflight 요청은 여기서 바로 끝내기
+  if (req.method === "OPTIONS") {
+    return res.sendStatus(204);
+  }
+
+  next();
+});
 
 // --------------------------------------------------
 // 공통 미들웨어
