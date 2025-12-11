@@ -1,3 +1,3 @@
-export default function handler(req, res) {
-    res.status(200).json({ ok: true, message: "orange-fanta-back alive" });
-  }
+import app from "../server.js";
+
+export default app;
