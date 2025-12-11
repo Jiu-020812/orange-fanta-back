@@ -8,19 +8,40 @@ datasource db {
 }
 
 model Item {
-  id        Int      @id @default(autoincrement())
+  id     Int  @id @default(autoincrement())
+  user   User @relation(fields: [userId], references: [id])
+  userId Int
+
   name      String
   size      String
   imageUrl  String?
   createdAt DateTime @default(now())
-  records   Record[]
+
+  records Record[]
 }
 
 model Record {
-  id     Int      @id @default(autoincrement())
+  id     Int  @id @default(autoincrement())
+  user   User @relation(fields: [userId], references: [id])
+  userId Int
+
+  item   Item @relation(fields: [itemId], references: [id])
   itemId Int
-  price  Int
-  count  Int
-  date   DateTime @default(now())
-  item   Item     @relation(fields: [itemId], references: [id])
+
+  price Int
+  count Int
+  date  DateTime @default(now())
+}
+
+model User {
+  id       Int     @id @default(autoincrement())
+  email    String  @unique
+  password String // 비밀번호 해시 저장
+  name     String? // 닉네임/이름 (선택)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  items   Item[]
+  records Record[]
 }

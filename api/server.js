@@ -1,7 +1,10 @@
 import express from "express";
-import cors from "cors";
 import cookieParser from "cookie-parser";
-import { PrismaClient } from "@prisma/client";
+import authRoutes from "./routes/authRoutes.js";
+import { requireAuth } from "./middleware/requireAuth.js";
+import itemsRoutes from "./routes/itemsRoutes.js";
+import recordsRoutes from "./routes/recordsRoutes.js";
+
 
 const app = express();
 const prisma = new PrismaClient();
@@ -20,6 +23,12 @@ app.use(
 
 app.use(express.json());
 app.use(cookieParser());
+// 인증 라우트
+app.use("/api/auth", authRoutes);
+
+// 이후 라우트는 로그인 필요
+app.use("/api/items", requireAuth, itemsRoutes);
+app.use("/api/records", requireAuth, recordsRoutes);
 
 // 헬스체크용
 app.get("/", (req, res) => {
