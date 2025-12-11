@@ -31,10 +31,7 @@ app.use((req, res, next) => {
     "Access-Control-Allow-Methods",
     "GET,POST,PUT,PATCH,DELETE,OPTIONS"
   );
-  res.header(
-    "Access-Control-Allow-Headers",
-    "Content-Type, Authorization"
-  );
+  res.header("Access-Control-Allow-Headers", "Content-Type, Authorization");
 
   if (req.method === "OPTIONS") {
     return res.sendStatus(204); // preflight 여기서 끝
@@ -48,28 +45,54 @@ app.use(express.json());
 app.use(cookieParser());
 
 // ================== 유틸 함수 ==================
+
+// JWT 생성
 function createToken(userId) {
   return jwt.sign({ userId }, JWT_SECRET, { expiresIn: "7d" });
 }
 
-function requireAuth(req, res, next) {
-  const token = req.cookies?.token;
-  if (!token) {
-    return res.status(401).json({ message: "로그인이 필요합니다." });
+// 요청에서 토큰 꺼내기 (쿠키 + Authorization 헤더)
+function getTokenFromReq(req) {
+  let token = req.cookies?.token;
+
+  const authHeader = req.headers.authorization;
+  if (!token && authHeader && authHeader.startsWith("Bearer ")) {
+    token = authHeader.slice(7);
   }
+
+  return token;
+}
+
+// 인증 미들웨어
+function requireAuth(req, res, next) {
+  const token = getTokenFromReq(req);
+
+  if (!token) {
+    return res
+      .status(401)
+      .json({ ok: false, reason: "NO_TOKEN", message: "로그인이 필요합니다." });
+  }
+
   try {
     const payload = jwt.verify(token, JWT_SECRET);
     req.userId = payload.userId;
     next();
   } catch (err) {
     console.error("requireAuth 에러:", err);
-    return res.status(401).json({ message: "세션이 만료되었거나 잘못된 토큰입니다." });
+    return res.status(401).json({
+      ok: false,
+      reason: "INVALID_TOKEN",
+      message: "세션이 만료되었거나 잘못된 토큰입니다.",
+    });
   }
 }
 
 // ================== 헬스체크 ==================
 app.get("/", (req, res) => {
-  res.json({ ok: true, message: "Backend running (single-file api/index.js)" });
+  res.json({
+    ok: true,
+    message: "Backend running (single-file api/index.js)",
+  });
 });
 
 // ================== AUTH ==================
@@ -81,12 +104,20 @@ app.post("/api/auth/signup", async (req, res) => {
     const { email, password, name } = req.body;
 
     if (!email || !password) {
-      return res.status(400).json({ message: "이메일과 비밀번호는 필수입니다." });
+      return res.status(400).json({
+        ok: false,
+        reason: "MISSING_FIELDS",
+        message: "이메일과 비밀번호는 필수입니다.",
+      });
     }
 
     const existing = await prisma.user.findUnique({ where: { email } });
     if (existing) {
-      return res.status(409).json({ message: "이미 존재하는 이메일입니다." });
+      return res.status(409).json({
+        ok: false,
+        reason: "DUPLICATE_EMAIL",
+        message: "이미 존재하는 이메일입니다.",
+      });
     }
 
     const hashed = await bcrypt.hash(password, 10);
@@ -100,18 +131,28 @@ app.post("/api/auth/signup", async (req, res) => {
     });
 
     const token = createToken(user.id);
+
     res
       .cookie("token", token, {
         httpOnly: true,
-        secure: process.env.NODE_ENV === "production",
+        secure: true, // Vercel는 https라 항상 true
         sameSite: "none",
         path: "/",
       })
       .status(201)
-      .json({ id: user.id, email: user.email, name: user.name });
+      .json({
+        ok: true,
+        mode: "signup",
+        user: { id: user.id, email: user.email, name: user.name },
+        token, // 👈 프론트에서 Authorization 헤더에 넣어 쓸 수 있도록 같이 내려줌
+      });
   } catch (err) {
     console.error("POST /api/auth/signup 에러:", err);
-    res.status(500).json({ message: "회원가입 중 서버 오류가 발생했습니다." });
+    res.status(500).json({
+      ok: false,
+      reason: "SERVER_ERROR",
+      message: "회원가입 중 서버 오류가 발생했습니다.",
+    });
   }
 });
 
@@ -123,26 +164,44 @@ app.post("/api/auth/login", async (req, res) => {
 
     const user = await prisma.user.findUnique({ where: { email } });
     if (!user) {
-      return res.status(401).json({ message: "이메일 또는 비밀번호가 올바르지 않습니다." });
+      return res.status(401).json({
+        ok: false,
+        reason: "INVALID_CREDENTIALS",
+        message: "이메일 또는 비밀번호가 올바르지 않습니다.",
+      });
     }
 
     const ok = await bcrypt.compare(password, user.password);
     if (!ok) {
-      return res.status(401).json({ message: "이메일 또는 비밀번호가 올바르지 않습니다." });
+      return res.status(401).json({
+        ok: false,
+        reason: "INVALID_CREDENTIALS",
+        message: "이메일 또는 비밀번호가 올바르지 않습니다.",
+      });
     }
 
     const token = createToken(user.id);
+
     res
       .cookie("token", token, {
         httpOnly: true,
-        secure: process.env.NODE_ENV === "production",
+        secure: true,
         sameSite: "none",
         path: "/",
       })
-      .json({ id: user.id, email: user.email, name: user.name });
+      .json({
+        ok: true,
+        mode: "login",
+        user: { id: user.id, email: user.email, name: user.name },
+        token, // 👈 여기도 token 같이 내려줌
+      });
   } catch (err) {
     console.error("POST /api/auth/login 에러:", err);
-    res.status(500).json({ message: "로그인 중 서버 오류가 발생했습니다." });
+    res.status(500).json({
+      ok: false,
+      reason: "SERVER_ERROR",
+      message: "로그인 중 서버 오류가 발생했습니다.",
+    });
   }
 });
 
@@ -150,30 +209,50 @@ app.post("/api/auth/login", async (req, res) => {
 // GET /api/auth/me
 app.get("/api/auth/me", async (req, res) => {
   try {
-    const token = req.cookies?.token;
+    const token = getTokenFromReq(req);
+
     if (!token) {
-      return res.status(401).json({ message: "로그인이 필요합니다." });
+      return res.status(401).json({
+        ok: false,
+        reason: "NO_TOKEN",
+        message: "로그인이 필요합니다.",
+      });
     }
+
     const payload = jwt.verify(token, JWT_SECRET);
     const user = await prisma.user.findUnique({
       where: { id: payload.userId },
       select: { id: true, email: true, name: true },
     });
+
     if (!user) {
-      return res.status(401).json({ message: "사용자를 찾을 수 없습니다." });
+      return res.status(401).json({
+        ok: false,
+        reason: "USER_NOT_FOUND",
+        message: "사용자를 찾을 수 없습니다.",
+      });
     }
-    res.json(user);
+
+    res.json({ ok: true, user });
   } catch (err) {
     console.error("GET /api/auth/me 에러:", err);
-    res.status(401).json({ message: "세션이 만료되었거나 잘못된 토큰입니다." });
+    res.status(401).json({
+      ok: false,
+      reason: "INVALID_TOKEN",
+      message: "세션이 만료되었거나 잘못된 토큰입니다.",
+    });
   }
 });
 
 // 로그아웃
 // POST /api/auth/logout
 app.post("/api/auth/logout", (req, res) => {
-  res.clearCookie("token", { path: "/" });
-  res.json({ ok: true });
+  res.clearCookie("token", {
+    path: "/",
+    secure: true,
+    sameSite: "none",
+  });
+  res.json({ ok: true, mode: "logout" });
 });
 
 // ================== ITEMS ==================
@@ -188,7 +267,9 @@ app.get("/api/items", requireAuth, async (req, res) => {
     res.status(200).json(items);
   } catch (err) {
     console.error("GET /api/items error", err);
-    res.status(500).json({ ok: false, message: "서버 에러(GET /api/items)" });
+    res
+      .status(500)
+      .json({ ok: false, message: "서버 에러(GET /api/items)" });
   }
 });
 
@@ -215,7 +296,9 @@ app.post("/api/items", requireAuth, async (req, res) => {
     res.status(201).json(newItem);
   } catch (err) {
     console.error("POST /api/items error", err);
-    res.status(500).json({ ok: false, message: "서버 에러(POST /api/items)" });
+    res
+      .status(500)
+      .json({ ok: false, message: "서버 에러(POST /api/items)" });
   }
 });
 
