@@ -261,15 +261,18 @@ app.post("/api/auth/logout", (req, res) => {
 app.get("/api/items", requireAuth, async (req, res) => {
   try {
     const items = await prisma.item.findMany({
-      where: { userId: req.userId },
+      where: {
+        OR: [
+          { userId: req.userId },   // 내 데이터
+          { userId: null },         // 예전(공용) 데이터
+        ],
+      },
       orderBy: [{ createdAt: "asc" }, { id: "asc" }],
     });
     res.status(200).json(items);
   } catch (err) {
     console.error("GET /api/items error", err);
-    res
-      .status(500)
-      .json({ ok: false, message: "서버 에러(GET /api/items)" });
+    res.status(500).json({ ok: false, message: "서버 에러(GET /api/items)" });
   }
 });
 
@@ -316,7 +319,13 @@ app.get("/api/items/:itemId/records", requireAuth, async (req, res) => {
 
   try {
     const records = await prisma.record.findMany({
-      where: { itemId, userId: req.userId },
+      where: {
+        itemId,
+        OR: [
+          { userId: req.userId },
+          { userId: null },
+        ],
+      },
       orderBy: [{ date: "asc" }, { id: "asc" }],
     });
     res.status(200).json(records);
