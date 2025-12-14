@@ -260,19 +260,55 @@ app.post("/api/auth/logout", (req, res) => {
 // GET /api/items
 app.get("/api/items", requireAuth, async (req, res) => {
   try {
+    // 로그인한 유저의 userId 는 requireAuth 가 넣어줌
+    const userId = req.userId;
+
     const items = await prisma.item.findMany({
-      where: {
-        OR: [
-          { userId: req.userId },   // 내 데이터
-          { userId: null },         // 예전(공용) 데이터
-        ],
-      },
-      orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+      where: { userId },             // ✅ 여기! OR / null 전부 삭제
+      orderBy: [
+        { createdAt: "asc" },
+        { id: "asc" },
+      ],
     });
+
     res.status(200).json(items);
   } catch (err) {
     console.error("GET /api/items error", err);
-    res.status(500).json({ ok: false, message: "서버 에러(GET /api/items)" });
+    res.status(500).json({
+      ok: false,
+      message: "서버 에러(GET /api/items)",
+    });
+  }
+});
+
+// POST /api/items
+app.post("/api/items", requireAuth, async (req, res) => {
+  try {
+    const userId = req.userId;
+    const { name, size, imageUrl } = req.body;
+
+    if (!name || !size) {
+      return res
+        .status(400)
+        .json({ ok: false, message: "name과 size는 필수입니다." });
+    }
+
+    const newItem = await prisma.item.create({
+      data: {
+        name,
+        size,
+        imageUrl: imageUrl || null,
+        userId,                       //  이 유저에게 속한 아이템으로 저장
+      },
+    });
+
+    res.status(201).json(newItem);
+  } catch (err) {
+    console.error("POST /api/items error", err);
+    res.status(500).json({
+      ok: false,
+      message: "서버 에러(POST /api/items)",
+    });
   }
 });
 
