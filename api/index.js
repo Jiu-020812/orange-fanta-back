@@ -354,22 +354,24 @@ app.get("/api/items/:itemId/records", requireAuth, async (req, res) => {
   }
 
   try {
+    // userId 가 없으면(where 에 undefined 넣으면) Prisma가 ValidationError 를 내서
+    // 안전하게 조건을 나눠줌
+    const where = { itemId };
+    if (req.userId != null) {
+      where.userId = req.userId;
+    }
+
     const records = await prisma.record.findMany({
-      where: {
-        itemId,
-        OR: [
-          { userId: req.userId },
-          { userId: null },
-        ],
-      },
+      where,
       orderBy: [{ date: "asc" }, { id: "asc" }],
     });
-    res.status(200).json(records);
+
+    return res.status(200).json(records);
   } catch (err) {
     console.error("GET /api/items/:itemId/records error", err);
-    res.status(500).json({
+    return res.status(500).json({
       ok: false,
-      message: "서버 에러(GET /records)",
+      message: "서버 에러(GET /api/items/:itemId/records)",
     });
   }
 });
@@ -385,7 +387,7 @@ app.post("/api/items/:itemId/records", requireAuth, async (req, res) => {
   }
 
   try {
-    const { price, count, date } = req.body;
+    const { price, count, date } = req.body || {};
 
     if (price == null) {
       return res
@@ -396,19 +398,19 @@ app.post("/api/items/:itemId/records", requireAuth, async (req, res) => {
     const newRecord = await prisma.record.create({
       data: {
         itemId,
-        userId: req.userId,
+        userId: req.userId ?? null, // 스키마가 not null이면 req.userId 만 넣어도 됨
         price: Number(price),
         count: count == null ? 1 : Number(count),
         date: date ? new Date(date) : new Date(),
       },
     });
 
-    res.status(201).json(newRecord);
+    return res.status(201).json(newRecord);
   } catch (err) {
     console.error("POST /api/items/:itemId/records error", err);
-    res.status(500).json({
+    return res.status(500).json({
       ok: false,
-      message: "서버 에러(POST /records)",
+      message: "서버 에러(POST /api/items/:itemId/records)",
     });
   }
 });
