@@ -1,48 +1,80 @@
-app.post("/api/migrate/records-batch", requireAuth, async (req, res) => {
+import { PrismaClient } from "@prisma/client";
+
+let prisma;
+if (!globalThis._prisma) globalThis._prisma = new PrismaClient();
+prisma = globalThis._prisma;
+
+export default async function recordsBatchHandler(req, res) {
+  if (req.method !== "POST") {
+    res.setHeader("Allow", "POST");
+    return res.status(405).json({ ok: false, message: "Method Not Allowed" });
+  }
+
   try {
-    const { category, rows } = req.body || {};
-    if (!category || !Array.isArray(rows)) {
-      return res.status(400).json({ ok: false, message: "category, rows 필요" });
-    }
-    if (rows.length > 300) {
-      return res.status(413).json({ ok: false, message: "rows too large (max 300)" });
+    const records = Array.isArray(req.body?.records) ? req.body.records : [];
+
+    if (records.length === 0) {
+      return res.json({ ok: true, inserted: 0, skipped: 0 });
     }
 
-    // 이번 배치에 등장하는 로컬 itemId 목록
-    const legacyIds = [...new Set(rows.map(r => Number(r.itemId)).filter(n => Number.isFinite(n)))];
+    // ⚠️ 여기서 핵심은 "레코드가 가리키는 로컬 item id(=shoeId)"를
+    // 서버 Item.id로 바꿔서 저장해야 한다는 점
+    // → 이 변환 로직은 네 기존 코드(items 넣을 때 legacyId 저장) 기준으로 작성해야 함
 
-    // 로컬 id -> 서버 id 매핑 만들기
+    // 지금은 "변환 로직 자리"만 정확히 만들어둘게:
+    // records의 shoeId(=로컬 item id)와 userId/category로 Item을 찾아서 itemId로 매핑해야 함.
+
+    const userId = records[0]?.userId; // migrate 호출에서 넣어주는 값 권장
+    if (!userId) {
+      return res.status(400).json({ ok: false, message: "userId is required in records" });
+    }
+
+    // 1) 필요한 legacyId 목록
+    const legacyItemIds = [...new Set(records.map((r) => String(r.shoeId ?? r.itemLegacyId ?? "")))].filter(Boolean);
+
+    // 2) 서버 아이템 조회 (legacyId → id 매핑)
     const items = await prisma.item.findMany({
-      where: { userId: req.userId, category, legacyId: { in: legacyIds } },
+      where: { userId, legacyId: { in: legacyItemIds } },
       select: { id: true, legacyId: true },
     });
 
-    const map = new Map(items.map(it => [it.legacyId, it.id]));
+    const map = new Map(items.map((it) => [it.legacyId, it.id]));
 
-    // 매핑되는 것만 record 생성
-    const data = rows
+    // 3) 매핑된 것만 저장
+    const data = records
       .map((r) => {
-        const serverItemId = map.get(Number(r.itemId));
-        if (!serverItemId) return null; // 매칭 실패
+        const legacy = String(r.shoeId ?? r.itemLegacyId ?? "");
+        const itemId = map.get(legacy);
+        if (!itemId) return null;
+
         return {
-          userId: req.userId,
-          itemId: serverItemId,
-          price: Number(r.price ?? 0),
-          count: Number(r.count ?? 1),
+          userId,
+          itemId,
+          price: Number(r.price),
+          count: r.count == null ? 1 : Number(r.count),
           date: r.date ? new Date(r.date) : new Date(),
         };
       })
       .filter(Boolean);
 
-    await prisma.record.createMany({ data, skipDuplicates: true });
+    const result = await prisma.record.createMany({
+      data,
+      skipDuplicates: true,
+    });
 
     return res.json({
       ok: true,
-      inserted: data.length,
-      missingItemCount: rows.length - data.length,
+      inserted: result.count,
+      received: records.length,
+      sent: data.length,
+      unmatched: records.length - data.length,
     });
   } catch (err) {
     console.error("migrate records error", err);
-    return res.status(500).json({ ok: false, message: "server error", error: String(err?.message || err) });
+    return res.status(500).json({
+      ok: false,
+      message: "server error",
+      error: String(err?.message || err),
+    });
   }
-});
+}
