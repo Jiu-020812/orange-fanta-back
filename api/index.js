@@ -43,6 +43,7 @@ app.use((req, res, next) => {
 // ================== 공통 미들웨어 ==================
 app.use(express.json());
 app.use(cookieParser());
+app.use(express.json({ limit: "20mb" }));
 
 // ================== 유틸 함수 ==================
 

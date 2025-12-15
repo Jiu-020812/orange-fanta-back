@@ -26,12 +26,17 @@ model User {
 }
 
 model Item {
-  id        Int      @id @default(autoincrement())
+  id        Int          @id @default(autoincrement())
+
   name      String
   size      String
   imageUrl  String?
   category  ItemCategory @default(SHOE)
-  createdAt DateTime @default(now())
+
+  // ✅ IndexedDB 로컬 id (마이그레이션용)
+  legacyId  Int?
+
+  createdAt DateTime     @default(now())
 
   // FK
   userId Int
@@ -39,6 +44,9 @@ model Item {
 
   // 관계 (Record 쪽과 1:N)
   records Record[]
+
+  // ✅ 같은 유저의 같은 카테고리에서 legacyId로 정확히 매칭
+  @@unique([userId, category, legacyId])
 }
 
 model Record {

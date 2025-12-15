@@ -1,0 +1,48 @@
+app.post("/api/migrate/records-batch", requireAuth, async (req, res) => {
+  try {
+    const { category, rows } = req.body || {};
+    if (!category || !Array.isArray(rows)) {
+      return res.status(400).json({ ok: false, message: "category, rows 필요" });
+    }
+    if (rows.length > 300) {
+      return res.status(413).json({ ok: false, message: "rows too large (max 300)" });
+    }
+
+    // 이번 배치에 등장하는 로컬 itemId 목록
+    const legacyIds = [...new Set(rows.map(r => Number(r.itemId)).filter(n => Number.isFinite(n)))];
+
+    // 로컬 id -> 서버 id 매핑 만들기
+    const items = await prisma.item.findMany({
+      where: { userId: req.userId, category, legacyId: { in: legacyIds } },
+      select: { id: true, legacyId: true },
+    });
+
+    const map = new Map(items.map(it => [it.legacyId, it.id]));
+
+    // 매핑되는 것만 record 생성
+    const data = rows
+      .map((r) => {
+        const serverItemId = map.get(Number(r.itemId));
+        if (!serverItemId) return null; // 매칭 실패
+        return {
+          userId: req.userId,
+          itemId: serverItemId,
+          price: Number(r.price ?? 0),
+          count: Number(r.count ?? 1),
+          date: r.date ? new Date(r.date) : new Date(),
+        };
+      })
+      .filter(Boolean);
+
+    await prisma.record.createMany({ data, skipDuplicates: true });
+
+    return res.json({
+      ok: true,
+      inserted: data.length,
+      missingItemCount: rows.length - data.length,
+    });
+  } catch (err) {
+    console.error("migrate records error", err);
+    return res.status(500).json({ ok: false, message: "server error", error: String(err?.message || err) });
+  }
+});

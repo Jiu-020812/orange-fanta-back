@@ -1,0 +1,33 @@
+app.post("/api/migrate/items-batch", requireAuth, async (req, res) => {
+  try {
+    const { category, rows } = req.body || {};
+    if (!category || !Array.isArray(rows)) {
+      return res.status(400).json({ ok: false, message: "category, rows 필요" });
+    }
+    if (rows.length > 200) {
+      return res.status(413).json({ ok: false, message: "rows too large (max 200)" });
+    }
+
+    const data = rows.map((r) => ({
+      userId: req.userId,
+      category,                 // "FOOD" | "SHOE"
+      legacyId: Number(r.id),   // ✅ 로컬 id 저장
+      name: String(r.name ?? ""),
+      size: String(r.size ?? ""),
+      imageUrl: r.imageUrl ?? null,
+      createdAt: r.createdAt ? new Date(r.createdAt) : undefined,
+    })).map(d => {
+      const x = { ...d };
+      if (!x.createdAt) delete x.createdAt;
+      return x;
+    });
+
+    // 중복(같은 userId/category/legacyId)이면 스킵
+    await prisma.item.createMany({ data, skipDuplicates: true });
+
+    return res.json({ ok: true, inserted: data.length });
+  } catch (err) {
+    console.error("migrate items error", err);
+    return res.status(500).json({ ok: false, message: "server error", error: String(err?.message || err) });
+  }
+});
