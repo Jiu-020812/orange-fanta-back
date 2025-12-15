@@ -44,6 +44,9 @@ app.use((req, res, next) => {
 app.use(express.json());
 app.use(cookieParser());
 app.use(express.json({ limit: "20mb" }));
+app.use("/api/migrate/items-batch", itemsBatchHandler);
+app.use("/api/migrate/records-batch", recordsBatchHandler);
+
 
 // ================== 유틸 함수 ==================
 

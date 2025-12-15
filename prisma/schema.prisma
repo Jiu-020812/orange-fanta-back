@@ -34,7 +34,7 @@ model Item {
   category  ItemCategory @default(SHOE)
 
   // ✅ IndexedDB 로컬 id (마이그레이션용)
-  legacyId  Int?
+  legacyId   String?
 
   createdAt DateTime     @default(now())
 
