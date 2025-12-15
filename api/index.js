@@ -4,6 +4,9 @@ import cors from "cors";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import { PrismaClient } from "@prisma/client";
+import itemsBatchHandler from "./migrate/items-batch.js";
+import recordsBatchHandler from "./migrate/records-batch.js";
+
 
 const app = express();
 const prisma = new PrismaClient();
