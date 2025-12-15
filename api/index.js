@@ -415,5 +415,99 @@ app.post("/api/items/:itemId/records", requireAuth, async (req, res) => {
   }
 });
 
+// ================== MIGRATION (IndexedDB → Server) ==================
+
+// POST /api/migrate/indexeddb
+app.post("/api/migrate/indexeddb", requireAuth, async (req, res) => {
+  try {
+    const data = req.body;
+
+    if (!data?.stores) {
+      return res.status(400).json({ message: "Invalid migration data" });
+    }
+
+    const { foods = [], foodRecords = [], shoes = [], records = [] } = data.stores;
+
+    const itemIdMap = new Map(); // oldId -> newId
+
+    // ---------- 1. FOODS ----------
+    for (const item of foods) {
+      const created = await prisma.item.create({
+        data: {
+          userId: req.userId,
+          name: item.name,
+          size: item.size ?? "",
+          imageUrl: item.imageUrl ?? null,
+          category: "FOOD",
+          createdAt: item.createdAt ? new Date(item.createdAt) : new Date(),
+        },
+      });
+
+      itemIdMap.set(item.id, created.id);
+    }
+
+    // ---------- 2. SHOES ----------
+    for (const item of shoes) {
+      const created = await prisma.item.create({
+        data: {
+          userId: req.userId,
+          name: item.name,
+          size: item.size ?? "",
+          imageUrl: item.imageUrl ?? null,
+          category: "SHOE",
+          createdAt: item.createdAt ? new Date(item.createdAt) : new Date(),
+        },
+      });
+
+      itemIdMap.set(item.id, created.id);
+    }
+
+    // ---------- 3. FOOD RECORDS ----------
+    for (const r of foodRecords) {
+      const newItemId = itemIdMap.get(r.itemId);
+      if (!newItemId) continue;
+
+      await prisma.record.create({
+        data: {
+          userId: req.userId,
+          itemId: newItemId,
+          price: Number(r.price),
+          count: Number(r.count ?? 1),
+          date: r.date ? new Date(r.date) : new Date(),
+        },
+      });
+    }
+
+    // ---------- 4. SHOE RECORDS ----------
+    for (const r of records) {
+      const newItemId = itemIdMap.get(r.itemId);
+      if (!newItemId) continue;
+
+      await prisma.record.create({
+        data: {
+          userId: req.userId,
+          itemId: newItemId,
+          price: Number(r.price),
+          count: Number(r.count ?? 1),
+          date: r.date ? new Date(r.date) : new Date(),
+        },
+      });
+    }
+
+    res.json({
+      ok: true,
+      summary: {
+        foods: foods.length,
+        shoes: shoes.length,
+        foodRecords: foodRecords.length,
+        records: records.length,
+      },
+    });
+  } catch (err) {
+    console.error("❌ MIGRATION ERROR", err);
+    res.status(500).json({ message: "Migration failed" });
+  }
+});
+
 // ================== Vercel용 export ==================
 export default app;
