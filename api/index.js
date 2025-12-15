@@ -11,9 +11,8 @@ const prisma = new PrismaClient();
 // ================== 환경 변수 ==================
 const JWT_SECRET = process.env.JWT_SECRET || "dev-secret-key";
 
-// ================== CORS 설정 ==================
 const allowedOrigins = [
-  "https://orange-fanta-one.vercel.app", // 프론트 배포 주소
+  "https://orange-fanta-one.vercel.app",
   "http://localhost:5173",
   "http://localhost:5175",
 ];
@@ -21,27 +20,26 @@ const allowedOrigins = [
 app.use((req, res, next) => {
   const origin = req.headers.origin;
 
+  // ✅ 허용된 origin만 정확히 반사(reflect)
   if (origin && allowedOrigins.includes(origin)) {
-    res.header("Access-Control-Allow-Origin", origin);
-    res.header("Vary", "Origin");
-    res.header("Access-Control-Allow-Credentials", "true");
+    res.setHeader("Access-Control-Allow-Origin", origin);
+    res.setHeader("Vary", "Origin"); // 캐시/프록시 대비
+    res.setHeader("Access-Control-Allow-Credentials", "true");
   }
 
-  res.header(
-    "Access-Control-Allow-Methods",
-    "GET,POST,PUT,PATCH,DELETE,OPTIONS"
-  );
-  res.header("Access-Control-Allow-Headers", "Content-Type, Authorization");
+  // ✅ preflight 포함 모든 메서드/헤더 허용
+  res.setHeader("Access-Control-Allow-Methods", "GET,POST,PUT,PATCH,DELETE,OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
 
+  // ✅ preflight는 무조건 여기서 종료(500 나면 안됨)
   if (req.method === "OPTIONS") {
-    return res.sendStatus(204); // preflight 여기서 끝
+    return res.sendStatus(204);
   }
 
   next();
 });
 
 // ================== 공통 미들웨어 ==================
-app.use(express.json());
 app.use(cookieParser());
 app.use(express.json({ limit: "20mb" }));
 app.use("/api/migrate/items-batch", itemsBatchHandler);
