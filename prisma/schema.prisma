@@ -37,6 +37,7 @@ model Item {
   legacyId   String?
 
   createdAt DateTime     @default(now())
+  memo String?
 
   // FK
   userId Int
