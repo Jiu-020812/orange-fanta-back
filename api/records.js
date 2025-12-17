@@ -79,7 +79,7 @@ export default async function handler(req, res) {
         orderBy: [{ date: "asc" }, { id: "asc" }],
       });
 
-      // ✅ 프론트 호환: 기존처럼 배열만 반환
+      //  프론트 호환: 기존처럼 배열만 반환
       res.status(200).json(records);
     } catch (err) {
       console.error("GET /api/records error", err);

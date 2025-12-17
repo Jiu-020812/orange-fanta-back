@@ -37,7 +37,7 @@ function getBody(req) {
 }
 
 /**
- * ✅ 임시 userId 추출(로그인 쿠키 방식 완성되면 여기만 갈아끼우면 됨)
+ *  임시 userId 추출(로그인 쿠키 방식 완성되면 여기만 갈아끼우면 됨)
  * - GET/DELETE: ?userId=1
  * - POST/PUT: body.userId
  * - 없으면 null(호환)
@@ -84,7 +84,7 @@ export default async function handler(req, res) {
         orderBy: [{ createdAt: "asc" }, { id: "asc" }],
       });
 
-      // ✅ 프론트 호환: 배열 그대로 반환
+      //  프론트 호환: 배열 그대로 반환
       res.status(200).json(items);
     } catch (err) {
       console.error("GET /api/items error", err);
@@ -122,7 +122,7 @@ export default async function handler(req, res) {
         },
       });
 
-      // ✅ 프론트 호환: item 객체 그대로 반환
+      //  프론트 호환: item 객체 그대로 반환
       res.status(201).json(newItem);
     } catch (err) {
       console.error("POST /api/items error", err);
@@ -138,7 +138,7 @@ export default async function handler(req, res) {
 
   // ---------------- PUT /api/items ----------------
   // body: { userId?, id, name?, size?, imageUrl?, category?, legacyId?, memo? }
-  // ✅ 옵션 수정/메모 저장에 필요
+  //  옵션 수정/메모 저장에 필요
   if (req.method === "PUT") {
     try {
       const body = getBody(req) || {};
@@ -150,7 +150,7 @@ export default async function handler(req, res) {
         return;
       }
 
-      // ✅ userId가 있으면 내 아이템만 수정되게 가드
+      //  userId가 있으면 내 아이템만 수정되게 가드
       if (userId) {
         const exists = await prisma.item.findFirst({
           where: { id: numericId, userId },
@@ -174,7 +174,7 @@ export default async function handler(req, res) {
         },
       });
 
-      // ✅ 프론트 호환: item 객체 그대로 반환
+      //  프론트 호환: item 객체 그대로 반환
       res.status(200).json(updated);
     } catch (err) {
       console.error("PUT /api/items error", err);
@@ -197,7 +197,7 @@ export default async function handler(req, res) {
     }
 
     try {
-      // ✅ userId가 있으면 내 아이템만 삭제되게 가드
+      // userId가 있으면 내 아이템만 삭제되게 가드
       if (userId) {
         const existing = await prisma.item.findFirst({
           where: { id, userId },
@@ -222,7 +222,7 @@ export default async function handler(req, res) {
         where: { id },
       });
 
-      // ✅ 프론트 호환: 204
+      //  프론트 호환: 204
       res.status(204).end();
     } catch (err) {
       console.error("DELETE /api/items error", err);

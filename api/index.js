@@ -104,7 +104,10 @@ app.post("/api/auth/signup", async (req, res) => {
     if (!email || !password) return res.status(400).json({ ok: false });
 
     const exists = await prisma.user.findUnique({ where: { email } });
-    if (exists) return res.status(409).json({ ok: false, reason: "DUPLICATE_EMAIL" });
+    if (exists)
+      return res
+        .status(409)
+        .json({ ok: false, reason: "DUPLICATE_EMAIL" });
 
     const hashed = await bcrypt.hash(password, 10);
     const user = await prisma.user.create({
@@ -199,6 +202,8 @@ app.post("/api/items", requireAuth, async (req, res) => {
 
 app.put("/api/items/:id", requireAuth, async (req, res) => {
   const id = Number(req.params.id);
+  if (!Number.isFinite(id) || id <= 0) return res.status(400).json({ ok: false });
+
   const { name, size, imageUrl, memo, category } = req.body;
 
   const existing = await prisma.item.findFirst({
@@ -222,6 +227,7 @@ app.put("/api/items/:id", requireAuth, async (req, res) => {
 
 app.delete("/api/items/:id", requireAuth, async (req, res) => {
   const id = Number(req.params.id);
+  if (!Number.isFinite(id) || id <= 0) return res.status(400).json({ ok: false });
 
   const existing = await prisma.item.findFirst({
     where: { id, userId: req.userId },
@@ -243,7 +249,6 @@ function normType(t) {
 }
 
 async function calcStock(userId, itemId) {
-  // IN 합 - OUT 합
   const rows = await prisma.record.groupBy({
     by: ["type"],
     where: { userId, itemId },
@@ -258,13 +263,16 @@ async function calcStock(userId, itemId) {
 // GET /api/items/:itemId/records
 app.get("/api/items/:itemId/records", requireAuth, async (req, res) => {
   const itemId = Number(req.params.itemId);
+  if (!Number.isFinite(itemId) || itemId <= 0) {
+    return res.status(400).json({ ok: false, message: "itemId가 잘못되었습니다." });
+  }
 
   const records = await prisma.record.findMany({
     where: { itemId, userId: req.userId },
     orderBy: [{ date: "asc" }, { id: "asc" }],
   });
 
-  // ✅ 기존 프론트 호환: 배열 그대로 반환
+  //  프론트 호환: 배열 그대로
   res.json(records);
 });
 
@@ -272,7 +280,16 @@ app.get("/api/items/:itemId/records", requireAuth, async (req, res) => {
 // body: { price, count, date, type?, memo? }
 app.post("/api/items/:itemId/records", requireAuth, async (req, res) => {
   const itemId = Number(req.params.itemId);
+  if (!Number.isFinite(itemId) || itemId <= 0) {
+    return res.status(400).json({ ok: false, message: "itemId가 잘못되었습니다." });
+  }
+
   const { price, count, date, type, memo } = req.body;
+
+  //  price 검증 추가
+  if (price == null || price === "" || Number.isNaN(Number(price))) {
+    return res.status(400).json({ ok: false, message: "price는 필수입니다." });
+  }
 
   const numericCount = count == null ? 1 : Number(count);
   if (!Number.isFinite(numericCount) || numericCount <= 0) {
@@ -281,7 +298,7 @@ app.post("/api/items/:itemId/records", requireAuth, async (req, res) => {
 
   const recordType = normType(type);
 
-  // ✅ OUT 재고 부족 체크
+  //  OUT 재고 부족 체크
   if (recordType === "OUT") {
     const stock = await calcStock(req.userId, itemId);
     if (numericCount > stock) {
@@ -312,8 +329,17 @@ app.post("/api/items/:itemId/records", requireAuth, async (req, res) => {
 // body: { id, price?, count?, date?, type?, memo? }
 app.put("/api/items/:itemId/records", requireAuth, async (req, res) => {
   const itemId = Number(req.params.itemId);
+  if (!Number.isFinite(itemId) || itemId <= 0) {
+    return res.status(400).json({ ok: false, message: "itemId가 잘못되었습니다." });
+  }
+
   const { id, price, count, date, type, memo } = req.body;
   const numericId = Number(id);
+
+  //  id 검증 추가
+  if (!Number.isFinite(numericId) || numericId <= 0) {
+    return res.status(400).json({ ok: false, message: "id가 잘못되었습니다." });
+  }
 
   const existing = await prisma.record.findFirst({
     where: { id: numericId, itemId, userId: req.userId },
@@ -327,9 +353,7 @@ app.put("/api/items/:itemId/records", requireAuth, async (req, res) => {
     return res.status(400).json({ ok: false, message: "count가 잘못되었습니다." });
   }
 
-  // ✅ 업데이트 재고 체크:
-  // 현재 재고는 “기존 레코드 포함”이므로,
-  // 이 레코드가 OUT이었다면 그 수량을 다시 더해 “제외 재고”를 만든 뒤 비교해야 정확
+  // 업데이트 재고 체크
   if (nextType === "OUT") {
     const stockNow = await calcStock(req.userId, itemId);
     const stockExcludingThis =
@@ -347,7 +371,11 @@ app.put("/api/items/:itemId/records", requireAuth, async (req, res) => {
   const updated = await prisma.record.update({
     where: { id: numericId },
     data: {
-      ...(price != null ? { price: Number(price) } : {}),
+      ...(price != null
+        ? (Number.isNaN(Number(price))
+            ? {}
+            : { price: Number(price) })
+        : {}),
       ...(count != null ? { count: nextCount } : {}),
       ...(date ? { date: new Date(date) } : {}),
       ...(type != null ? { type: nextType } : {}),
@@ -361,7 +389,14 @@ app.put("/api/items/:itemId/records", requireAuth, async (req, res) => {
 // DELETE /api/items/:itemId/records?id=123
 app.delete("/api/items/:itemId/records", requireAuth, async (req, res) => {
   const itemId = Number(req.params.itemId);
+  if (!Number.isFinite(itemId) || itemId <= 0) {
+    return res.status(400).json({ ok: false, message: "itemId가 잘못되었습니다." });
+  }
+
   const id = Number(req.query.id);
+  if (!Number.isFinite(id) || id <= 0) {
+    return res.status(400).json({ ok: false, message: "id가 잘못되었습니다." });
+  }
 
   const existing = await prisma.record.findFirst({
     where: { id, itemId, userId: req.userId },

@@ -38,7 +38,7 @@ model Item {
   imageUrl  String?
   category  ItemCategory @default(SHOE)
 
-  // ✅ IndexedDB 로컬 id (마이그레이션용)
+  //  IndexedDB 로컬 id (마이그레이션용)
   legacyId  String?
 
   createdAt DateTime     @default(now())
@@ -51,17 +51,17 @@ model Item {
   // 관계 (Record 쪽과 1:N)
   records Record[]
 
-  // ✅ 같은 유저의 같은 카테고리에서 legacyId로 정확히 매칭
+  // 같은 유저의 같은 카테고리에서 legacyId로 정확히 매칭
   @@unique([userId, category, legacyId])
 }
 
 model Record {
   id    Int        @id @default(autoincrement())
 
-  // ✅ 추가: 매입/출고 구분
+  // 추가: 매입/출고 구분
   type  RecordType @default(IN)
 
-  // ✅ 기존 그대로 사용:
+  // 기존 그대로 사용:
   // IN  -> 매입 단가
   // OUT -> 판매 단가(출고 단가)
   price Int
