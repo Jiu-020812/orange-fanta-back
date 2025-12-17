@@ -6,7 +6,7 @@ import { PrismaClient } from "@prisma/client";
 
 import itemsBatchHandler from "./migrate/items-batch.js";
 import recordsBatchHandler from "./migrate/records-batch.js";
-import meRouter from "./routes/me.js";
+import meRouter from "../routes/me.js";
 
 const app = express();
 const prisma = new PrismaClient();
