@@ -407,5 +407,27 @@ app.delete("/api/items/:itemId/records", requireAuth, async (req, res) => {
   res.status(204).end();
 });
 
+// 전체 기록 조회 (입/출고 페이지용)
+app.get("/api/records", requireAuth, async (req, res) => {
+  const type = String(req.query.type || "").toUpperCase(); // IN | OUT | ""
+  const priceMissing = String(req.query.priceMissing || "") === "1";
+
+  const where = { userId: req.userId };
+
+  if (type === "IN" || type === "OUT") where.type = type;
+  if (priceMissing) where.price = null;
+
+  const records = await prisma.record.findMany({
+    where,
+    orderBy: [{ date: "desc" }, { id: "desc" }],
+    include: {
+      item: { select: { id: true, name: true } }, // 리스트에서 품목명 보여주려고
+    },
+  });
+
+  res.json({ ok: true, records });
+});
+
+
 // ================== EXPORT ==================
 export default app;
