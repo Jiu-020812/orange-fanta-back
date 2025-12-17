@@ -12,13 +12,18 @@ enum ItemCategory {
   FOOD
 }
 
+enum RecordType {
+  IN   // 매입
+  OUT  // 출고(판매/출고)
+}
+
 model User {
   id        Int      @id @default(autoincrement())
   email     String   @unique
   password  String
   name      String?
   createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt 
+  updatedAt DateTime @updatedAt
 
   // 관계
   items   Item[]
@@ -34,10 +39,10 @@ model Item {
   category  ItemCategory @default(SHOE)
 
   // ✅ IndexedDB 로컬 id (마이그레이션용)
-  legacyId   String?
+  legacyId  String?
 
   createdAt DateTime     @default(now())
-  memo String?
+  memo      String?
 
   // FK
   userId Int
@@ -51,10 +56,21 @@ model Item {
 }
 
 model Record {
-  id    Int      @id @default(autoincrement())
+  id    Int        @id @default(autoincrement())
+
+  // ✅ 추가: 매입/출고 구분
+  type  RecordType @default(IN)
+
+  // ✅ 기존 그대로 사용:
+  // IN  -> 매입 단가
+  // OUT -> 판매 단가(출고 단가)
   price Int
-  count Int      @default(1)
+
+  count Int        @default(1)
   date  DateTime
+
+  // (선택) 출고 메모/판매처 등
+  memo  String?
 
   // FK
   userId Int
