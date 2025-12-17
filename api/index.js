@@ -39,10 +39,7 @@ app.use((req, res, next) => {
     "Content-Type, Authorization"
   );
 
-  if (req.method === "OPTIONS") {
-    return res.sendStatus(204);
-  }
-
+  if (req.method === "OPTIONS") return res.sendStatus(204);
   next();
 });
 
@@ -104,14 +101,10 @@ app.get("/", (req, res) => {
 app.post("/api/auth/signup", async (req, res) => {
   try {
     const { email, password, name } = req.body;
-    if (!email || !password) {
-      return res.status(400).json({ ok: false });
-    }
+    if (!email || !password) return res.status(400).json({ ok: false });
 
     const exists = await prisma.user.findUnique({ where: { email } });
-    if (exists) {
-      return res.status(409).json({ ok: false, reason: "DUPLICATE_EMAIL" });
-    }
+    if (exists) return res.status(409).json({ ok: false, reason: "DUPLICATE_EMAIL" });
 
     const hashed = await bcrypt.hash(password, 10);
     const user = await prisma.user.create({
@@ -179,8 +172,6 @@ app.post("/api/auth/logout", (req, res) => {
 });
 
 // ================== ITEMS ==================
-
-// GET /api/items
 app.get("/api/items", requireAuth, async (req, res) => {
   const items = await prisma.item.findMany({
     where: { userId: req.userId },
@@ -189,12 +180,9 @@ app.get("/api/items", requireAuth, async (req, res) => {
   res.json(items);
 });
 
-// POST /api/items
 app.post("/api/items", requireAuth, async (req, res) => {
   const { name, size, imageUrl, category } = req.body;
-  if (!name || !size) {
-    return res.status(400).json({ ok: false });
-  }
+  if (!name || !size) return res.status(400).json({ ok: false });
 
   const item = await prisma.item.create({
     data: {
@@ -209,7 +197,6 @@ app.post("/api/items", requireAuth, async (req, res) => {
   res.status(201).json(item);
 });
 
-// PUT /api/items/:id
 app.put("/api/items/:id", requireAuth, async (req, res) => {
   const id = Number(req.params.id);
   const { name, size, imageUrl, memo, category } = req.body;
@@ -233,7 +220,6 @@ app.put("/api/items/:id", requireAuth, async (req, res) => {
   res.json(updated);
 });
 
-// DELETE /api/items/:id
 app.delete("/api/items/:id", requireAuth, async (req, res) => {
   const id = Number(req.params.id);
 
@@ -250,29 +236,71 @@ app.delete("/api/items/:id", requireAuth, async (req, res) => {
   res.status(204).end();
 });
 
-// ================== RECORDS ==================
+// ================== RECORDS (출고 완성) ==================
 
-// GET
+function normType(t) {
+  return t === "OUT" ? "OUT" : "IN";
+}
+
+async function calcStock(userId, itemId) {
+  // IN 합 - OUT 합
+  const rows = await prisma.record.groupBy({
+    by: ["type"],
+    where: { userId, itemId },
+    _sum: { count: true },
+  });
+
+  const inSum = rows.find((r) => r.type === "IN")?._sum.count ?? 0;
+  const outSum = rows.find((r) => r.type === "OUT")?._sum.count ?? 0;
+  return inSum - outSum;
+}
+
+// GET /api/items/:itemId/records
 app.get("/api/items/:itemId/records", requireAuth, async (req, res) => {
   const itemId = Number(req.params.itemId);
+
   const records = await prisma.record.findMany({
     where: { itemId, userId: req.userId },
     orderBy: [{ date: "asc" }, { id: "asc" }],
   });
+
+  // ✅ 기존 프론트 호환: 배열 그대로 반환
   res.json(records);
 });
 
-// POST
+// POST /api/items/:itemId/records
+// body: { price, count, date, type?, memo? }
 app.post("/api/items/:itemId/records", requireAuth, async (req, res) => {
   const itemId = Number(req.params.itemId);
-  const { price, count, date } = req.body;
+  const { price, count, date, type, memo } = req.body;
+
+  const numericCount = count == null ? 1 : Number(count);
+  if (!Number.isFinite(numericCount) || numericCount <= 0) {
+    return res.status(400).json({ ok: false, message: "count가 잘못되었습니다." });
+  }
+
+  const recordType = normType(type);
+
+  // ✅ OUT 재고 부족 체크
+  if (recordType === "OUT") {
+    const stock = await calcStock(req.userId, itemId);
+    if (numericCount > stock) {
+      return res.status(400).json({
+        ok: false,
+        message: `재고 부족: 현재 재고(${stock})보다 많이 출고할 수 없습니다.`,
+        stock,
+      });
+    }
+  }
 
   const record = await prisma.record.create({
     data: {
       itemId,
       userId: req.userId,
+      type: recordType,
+      memo: memo != null ? String(memo) : null,
       price: Number(price),
-      count: count == null ? 1 : Number(count),
+      count: numericCount,
       date: date ? new Date(date) : new Date(),
     },
   });
@@ -280,29 +308,57 @@ app.post("/api/items/:itemId/records", requireAuth, async (req, res) => {
   res.status(201).json(record);
 });
 
-// PUT
+// PUT /api/items/:itemId/records
+// body: { id, price?, count?, date?, type?, memo? }
 app.put("/api/items/:itemId/records", requireAuth, async (req, res) => {
   const itemId = Number(req.params.itemId);
-  const { id, price, count, date } = req.body;
+  const { id, price, count, date, type, memo } = req.body;
+  const numericId = Number(id);
 
   const existing = await prisma.record.findFirst({
-    where: { id, itemId, userId: req.userId },
+    where: { id: numericId, itemId, userId: req.userId },
   });
   if (!existing) return res.status(404).json({ ok: false });
 
+  const nextType = type != null ? normType(type) : existing.type;
+  const nextCount = count != null ? Number(count) : existing.count;
+
+  if (!Number.isFinite(nextCount) || nextCount <= 0) {
+    return res.status(400).json({ ok: false, message: "count가 잘못되었습니다." });
+  }
+
+  // ✅ 업데이트 재고 체크:
+  // 현재 재고는 “기존 레코드 포함”이므로,
+  // 이 레코드가 OUT이었다면 그 수량을 다시 더해 “제외 재고”를 만든 뒤 비교해야 정확
+  if (nextType === "OUT") {
+    const stockNow = await calcStock(req.userId, itemId);
+    const stockExcludingThis =
+      existing.type === "OUT" ? stockNow + existing.count : stockNow;
+
+    if (nextCount > stockExcludingThis) {
+      return res.status(400).json({
+        ok: false,
+        message: `재고 부족: 현재 재고(${stockExcludingThis})보다 많이 출고할 수 없습니다.`,
+        stock: stockExcludingThis,
+      });
+    }
+  }
+
   const updated = await prisma.record.update({
-    where: { id },
+    where: { id: numericId },
     data: {
       ...(price != null ? { price: Number(price) } : {}),
-      ...(count != null ? { count: Number(count) } : {}),
+      ...(count != null ? { count: nextCount } : {}),
       ...(date ? { date: new Date(date) } : {}),
+      ...(type != null ? { type: nextType } : {}),
+      ...(memo != null ? { memo: memo ? String(memo) : null } : {}),
     },
   });
 
   res.json(updated);
 });
 
-// DELETE
+// DELETE /api/items/:itemId/records?id=123
 app.delete("/api/items/:itemId/records", requireAuth, async (req, res) => {
   const itemId = Number(req.params.itemId);
   const id = Number(req.query.id);
