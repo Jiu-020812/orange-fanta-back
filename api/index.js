@@ -6,6 +6,7 @@ import { PrismaClient } from "@prisma/client";
 
 import itemsBatchHandler from "./migrate/items-batch.js";
 import recordsBatchHandler from "./migrate/records-batch.js";
+import meRouter from "./routes/me.js";
 
 const app = express();
 const prisma = new PrismaClient();
@@ -48,6 +49,7 @@ app.use((req, res, next) => {
 // ================== 공통 미들웨어 ==================
 app.use(cookieParser());
 app.use(express.json({ limit: "20mb" }));
+app.use("/api/me", meRouter);
 
 // ================== MIGRATE (batch) ==================
 app.use("/api/migrate/items-batch", itemsBatchHandler);
