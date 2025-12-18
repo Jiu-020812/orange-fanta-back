@@ -242,10 +242,11 @@ app.delete("/api/items/:id", requireAuth, async (req, res) => {
   res.status(204).end();
 });
 
-// ================== RECORDS (출고 완성) ==================
+// ================== RECORDS (IN/OUT) ==================
 
 function normType(t) {
-  return t === "OUT" ? "OUT" : "IN";
+  const u = String(t || "").toUpperCase();
+  return u === "OUT" ? "OUT" : "IN";
 }
 
 async function calcStock(userId, itemId) {
@@ -261,36 +262,39 @@ async function calcStock(userId, itemId) {
 }
 
 // GET /api/items/:itemId/records
+// ✅ item(name/size) 같이 내려줌 + 응답 형태 통일
 app.get("/api/items/:itemId/records", requireAuth, async (req, res) => {
   const itemId = Number(req.params.itemId);
   if (!Number.isFinite(itemId) || itemId <= 0) {
-    return res.status(400).json({ ok: false, message: "itemId가 잘못되었습니다." });
+    return res
+      .status(400)
+      .json({ ok: false, message: "itemId가 잘못되었습니다." });
   }
 
   const records = await prisma.record.findMany({
     where: { itemId, userId: req.userId },
     orderBy: [{ date: "asc" }, { id: "asc" }],
+    include: {
+      item: { select: { id: true, name: true, size: true } }, // ✅ 옵션 표시용
+    },
   });
 
-  //  프론트 호환: 배열 그대로
-  res.json(records);
+  const stock = await calcStock(req.userId, itemId);
+  return res.json({ ok: true, records, stock });
 });
 
 // POST /api/items/:itemId/records
-// body: { price, count, date, type?, memo? }
+// body: { price?, count, date?, type?, memo? }
+// ✅ price는 옵션(없어도 OK). OUT일 때는 price 없어도 OK.
 app.post("/api/items/:itemId/records", requireAuth, async (req, res) => {
   const itemId = Number(req.params.itemId);
   if (!Number.isFinite(itemId) || itemId <= 0) {
-    return res.status(400).json({ ok: false, message: "itemId가 잘못되었습니다." });
+    return res
+      .status(400)
+      .json({ ok: false, message: "itemId가 잘못되었습니다." });
   }
 
   const { price, count, date, type, memo } = req.body;
-
-  //  price 검증 추가
-  const priceValue =
-  price == null || price === "" || Number.isNaN(Number(price))
-    ? null
-    : Number(price);
 
   const numericCount = count == null ? 1 : Number(count);
   if (!Number.isFinite(numericCount) || numericCount <= 0) {
@@ -299,45 +303,60 @@ app.post("/api/items/:itemId/records", requireAuth, async (req, res) => {
 
   const recordType = normType(type);
 
-  //  OUT 재고 부족 체크
+  // ✅ price optional 처리
+  let priceValue = null;
+  if (price != null && price !== "") {
+    const p = Number(price);
+    if (Number.isNaN(p) || !Number.isFinite(p) || p < 0) {
+      return res.status(400).json({ ok: false, message: "price가 잘못되었습니다." });
+    }
+    priceValue = p;
+  }
+
+  // ✅ OUT 재고 부족 체크
   if (recordType === "OUT") {
-    const stock = await calcStock(req.userId, itemId);
-    if (numericCount > stock) {
+    const stockNow = await calcStock(req.userId, itemId);
+    if (numericCount > stockNow) {
       return res.status(400).json({
         ok: false,
-        message: `재고 부족: 현재 재고(${stock})보다 많이 출고할 수 없습니다.`,
-        stock,
+        message: `재고 부족: 현재 재고(${stockNow})보다 많이 출고할 수 없습니다.`,
+        stock: stockNow,
       });
     }
   }
 
-  const record = await prisma.record.create({
+  const created = await prisma.record.create({
     data: {
       itemId,
       userId: req.userId,
       type: recordType,
-      memo: memo != null ? String(memo) : null,
-      price: priceValue,
+      price: priceValue, // ✅ null 가능
       count: numericCount,
       date: date ? new Date(date) : new Date(),
+      memo: memo != null && String(memo).trim() !== "" ? String(memo) : null,
+    },
+    include: {
+      item: { select: { id: true, name: true, size: true } },
     },
   });
 
-  res.status(201).json(record);
+  const stock = await calcStock(req.userId, itemId);
+  return res.status(201).json({ ok: true, record: created, stock });
 });
 
 // PUT /api/items/:itemId/records
 // body: { id, price?, count?, date?, type?, memo? }
+// ✅ price optional + OUT 업데이트 재고체크 유지
 app.put("/api/items/:itemId/records", requireAuth, async (req, res) => {
   const itemId = Number(req.params.itemId);
   if (!Number.isFinite(itemId) || itemId <= 0) {
-    return res.status(400).json({ ok: false, message: "itemId가 잘못되었습니다." });
+    return res
+      .status(400)
+      .json({ ok: false, message: "itemId가 잘못되었습니다." });
   }
 
   const { id, price, count, date, type, memo } = req.body;
   const numericId = Number(id);
-
-  //  id 검증 추가
   if (!Number.isFinite(numericId) || numericId <= 0) {
     return res.status(400).json({ ok: false, message: "id가 잘못되었습니다." });
   }
@@ -345,7 +364,7 @@ app.put("/api/items/:itemId/records", requireAuth, async (req, res) => {
   const existing = await prisma.record.findFirst({
     where: { id: numericId, itemId, userId: req.userId },
   });
-  if (!existing) return res.status(404).json({ ok: false });
+  if (!existing) return res.status(404).json({ ok: false, message: "record not found" });
 
   const nextType = type != null ? normType(type) : existing.type;
   const nextCount = count != null ? Number(count) : existing.count;
@@ -354,7 +373,19 @@ app.put("/api/items/:itemId/records", requireAuth, async (req, res) => {
     return res.status(400).json({ ok: false, message: "count가 잘못되었습니다." });
   }
 
-  // 업데이트 재고 체크
+  // ✅ price optional 처리
+  let nextPrice = undefined; // undefined = 변경 안함
+  if (price === null || price === "") {
+    nextPrice = null; // 명시적으로 비우기
+  } else if (price != null) {
+    const p = Number(price);
+    if (Number.isNaN(p) || !Number.isFinite(p) || p < 0) {
+      return res.status(400).json({ ok: false, message: "price가 잘못되었습니다." });
+    }
+    nextPrice = p;
+  }
+
+  // ✅ OUT 업데이트 재고 체크
   if (nextType === "OUT") {
     const stockNow = await calcStock(req.userId, itemId);
     const stockExcludingThis =
@@ -372,26 +403,28 @@ app.put("/api/items/:itemId/records", requireAuth, async (req, res) => {
   const updated = await prisma.record.update({
     where: { id: numericId },
     data: {
-      ...(price != null
-        ? (Number.isNaN(Number(price))
-            ? {}
-            : { price: Number(price) })
-        : {}),
+      ...(nextPrice !== undefined ? { price: nextPrice } : {}),
       ...(count != null ? { count: nextCount } : {}),
       ...(date ? { date: new Date(date) } : {}),
       ...(type != null ? { type: nextType } : {}),
       ...(memo != null ? { memo: memo ? String(memo) : null } : {}),
     },
+    include: {
+      item: { select: { id: true, name: true, size: true } },
+    },
   });
 
-  res.json(updated);
+  const stock = await calcStock(req.userId, itemId);
+  return res.json({ ok: true, record: updated, stock });
 });
 
 // DELETE /api/items/:itemId/records?id=123
 app.delete("/api/items/:itemId/records", requireAuth, async (req, res) => {
   const itemId = Number(req.params.itemId);
   if (!Number.isFinite(itemId) || itemId <= 0) {
-    return res.status(400).json({ ok: false, message: "itemId가 잘못되었습니다." });
+    return res
+      .status(400)
+      .json({ ok: false, message: "itemId가 잘못되었습니다." });
   }
 
   const id = Number(req.query.id);
@@ -402,10 +435,12 @@ app.delete("/api/items/:itemId/records", requireAuth, async (req, res) => {
   const existing = await prisma.record.findFirst({
     where: { id, itemId, userId: req.userId },
   });
-  if (!existing) return res.status(404).json({ ok: false });
+  if (!existing) return res.status(404).json({ ok: false, message: "record not found" });
 
   await prisma.record.delete({ where: { id } });
-  res.status(204).end();
+
+  const stock = await calcStock(req.userId, itemId);
+  return res.json({ ok: true, stock });
 });
 
 // 전체 기록 조회 (입/출고 페이지용)
