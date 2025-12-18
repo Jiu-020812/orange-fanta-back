@@ -287,9 +287,10 @@ app.post("/api/items/:itemId/records", requireAuth, async (req, res) => {
   const { price, count, date, type, memo } = req.body;
 
   //  price 검증 추가
-  if (price == null || price === "" || Number.isNaN(Number(price))) {
-    return res.status(400).json({ ok: false, message: "price는 필수입니다." });
-  }
+  const priceValue =
+  price == null || price === "" || Number.isNaN(Number(price))
+    ? null
+    : Number(price);
 
   const numericCount = count == null ? 1 : Number(count);
   if (!Number.isFinite(numericCount) || numericCount <= 0) {
@@ -316,7 +317,7 @@ app.post("/api/items/:itemId/records", requireAuth, async (req, res) => {
       userId: req.userId,
       type: recordType,
       memo: memo != null ? String(memo) : null,
-      price: Number(price),
+      price: priceValue,
       count: numericCount,
       date: date ? new Date(date) : new Date(),
     },
@@ -418,10 +419,17 @@ app.get("/api/records", requireAuth, async (req, res) => {
   if (priceMissing) where.price = null;
 
   const records = await prisma.record.findMany({
-    where,
-    orderBy: [{ date: "desc" }, { id: "desc" }],
+    where: { itemId, userId: req.userId },
+    orderBy: [{ date: "asc" }, { id: "asc" }],
     include: {
-      item: { select: { id: true, name: true } }, // 리스트에서 품목명 보여주려고
+      item: {
+        select: {
+          id: true,
+          name: true,
+          size: true,
+          category: true,
+        },
+      },
     },
   });
 
