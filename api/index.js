@@ -283,6 +283,30 @@ async function calcStock(userId, itemId) {
   return inSum - outSum;
 }
 
+// GET /api/records (입/출고 페이지용 전체 기록 조회)
+app.get(
+  "/api/records",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const type = String(req.query.type || "").toUpperCase();
+    const priceMissing = String(req.query.priceMissing || "") === "1";
+
+    const where = { userId: req.userId };
+    if (type === "IN" || type === "OUT") where.type = type;
+    if (priceMissing) where.price = null;
+
+    const records = await prisma.record.findMany({
+      where,
+      orderBy: [{ date: "desc" }, { id: "desc" }],
+      include: {
+        item: { select: { id: true, name: true, size: true, imageUrl: true } },
+      },
+    });
+
+    return res.json({ ok: true, records });
+  })
+);
+
 // POST /api/records/batch
 app.post(
   "/api/records/batch",
