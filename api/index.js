@@ -20,6 +20,10 @@ const allowedOrigins = [
   "http://localhost:5175",
 ];
 
+// ✅ Express4에서 async 에러를 확실히 next(err)로 넘기기
+const asyncHandler = (fn) => (req, res, next) =>
+  Promise.resolve(fn(req, res, next)).catch(next);
+
 // ================== CORS ==================
 app.use((req, res, next) => {
   const origin = req.headers.origin;
@@ -98,76 +102,70 @@ app.get("/", (req, res) => {
 });
 
 // ================== AUTH ==================
-app.post("/api/auth/signup", async (req, res) => {
-  try {
-    const { email, password, name } = req.body;
-    if (!email || !password) return res.status(400).json({ ok: false });
+app.post("/api/auth/signup", asyncHandler(async (req, res) => {
+  const { email, password, name } = req.body;
+  if (!email || !password) return res.status(400).json({ ok: false });
 
-    const exists = await prisma.user.findUnique({ where: { email } });
-    if (exists)
-      return res
-        .status(409)
-        .json({ ok: false, reason: "DUPLICATE_EMAIL" });
+  const exists = await prisma.user.findUnique({ where: { email } });
+  if (exists) {
+    return res
+      .status(409)
+      .json({ ok: false, reason: "DUPLICATE_EMAIL" });
+  }
 
-    const hashed = await bcrypt.hash(password, 10);
-    const user = await prisma.user.create({
-      data: { email, password: hashed, name: name || null },
+  const hashed = await bcrypt.hash(password, 10);
+  const user = await prisma.user.create({
+    data: { email, password: hashed, name: name || null },
+  });
+
+  const token = createToken(user.id);
+
+  res
+    .cookie("token", token, {
+      httpOnly: true,
+      secure: true,
+      sameSite: "none",
+      path: "/",
+    })
+    .json({
+      ok: true,
+      user: { id: user.id, email: user.email, name: user.name },
+      token,
     });
+}));
 
-    const token = createToken(user.id);
+app.post("/api/auth/login", asyncHandler(async (req, res) => {
+  const { email, password } = req.body;
 
-    res
-      .cookie("token", token, {
-        httpOnly: true,
-        secure: true,
-        sameSite: "none",
-        path: "/",
-      })
-      .json({
-        ok: true,
-        user: { id: user.id, email: user.email, name: user.name },
-        token,
-      });
-  } catch {
-    res.status(500).json({ ok: false });
-  }
-});
+  const user = await prisma.user.findUnique({ where: { email } });
+  if (!user) return res.status(401).json({ ok: false });
 
-app.post("/api/auth/login", async (req, res) => {
-  try {
-    const { email, password } = req.body;
-    const user = await prisma.user.findUnique({ where: { email } });
-    if (!user) return res.status(401).json({ ok: false });
+  const ok = await bcrypt.compare(password, user.password);
+  if (!ok) return res.status(401).json({ ok: false });
 
-    const ok = await bcrypt.compare(password, user.password);
-    if (!ok) return res.status(401).json({ ok: false });
+  const token = createToken(user.id);
 
-    const token = createToken(user.id);
+  res
+    .cookie("token", token, {
+      httpOnly: true,
+      secure: true,
+      sameSite: "none",
+      path: "/",
+    })
+    .json({
+      ok: true,
+      user: { id: user.id, email: user.email, name: user.name },
+      token,
+    });
+}));
 
-    res
-      .cookie("token", token, {
-        httpOnly: true,
-        secure: true,
-        sameSite: "none",
-        path: "/",
-      })
-      .json({
-        ok: true,
-        user: { id: user.id, email: user.email, name: user.name },
-        token,
-      });
-  } catch {
-    res.status(500).json({ ok: false });
-  }
-});
-
-app.get("/api/auth/me", requireAuth, async (req, res) => {
+app.get("/api/auth/me", requireAuth, asyncHandler(async (req, res) => {
   const user = await prisma.user.findUnique({
     where: { id: req.userId },
     select: { id: true, email: true, name: true },
   });
   res.json({ ok: true, user });
-});
+}));
 
 app.post("/api/auth/logout", (req, res) => {
   res.clearCookie("token", { path: "/", secure: true, sameSite: "none" });
@@ -175,15 +173,15 @@ app.post("/api/auth/logout", (req, res) => {
 });
 
 // ================== ITEMS ==================
-app.get("/api/items", requireAuth, async (req, res) => {
+app.get("/api/items", requireAuth, asyncHandler(async (req, res) => {
   const items = await prisma.item.findMany({
     where: { userId: req.userId },
     orderBy: [{ createdAt: "asc" }, { id: "asc" }],
   });
   res.json(items);
-});
+}));
 
-app.post("/api/items", requireAuth, async (req, res) => {
+app.post("/api/items", requireAuth, asyncHandler(async (req, res) => {
   const { name, size, imageUrl, category } = req.body;
   if (!name || !size) return res.status(400).json({ ok: false });
 
@@ -198,9 +196,9 @@ app.post("/api/items", requireAuth, async (req, res) => {
   });
 
   res.status(201).json(item);
-});
+}));
 
-app.put("/api/items/:id", requireAuth, async (req, res) => {
+app.put("/api/items/:id", requireAuth, asyncHandler(async (req, res) => {
   const id = Number(req.params.id);
   if (!Number.isFinite(id) || id <= 0) return res.status(400).json({ ok: false });
 
@@ -223,9 +221,9 @@ app.put("/api/items/:id", requireAuth, async (req, res) => {
   });
 
   res.json(updated);
-});
+}));
 
-app.delete("/api/items/:id", requireAuth, async (req, res) => {
+app.delete("/api/items/:id", requireAuth, asyncHandler(async (req, res) => {
   const id = Number(req.params.id);
   if (!Number.isFinite(id) || id <= 0) return res.status(400).json({ ok: false });
 
@@ -240,10 +238,9 @@ app.delete("/api/items/:id", requireAuth, async (req, res) => {
   await prisma.item.delete({ where: { id } });
 
   res.status(204).end();
-});
+}));
 
 // ================== RECORDS (IN/OUT) ==================
-
 function normType(t) {
   const u = String(t || "").toUpperCase();
   return u === "OUT" ? "OUT" : "IN";
@@ -262,36 +259,29 @@ async function calcStock(userId, itemId) {
 }
 
 // GET /api/items/:itemId/records
-// item(name/size) 같이 내려줌 + 응답 형태 통일
-app.get("/api/items/:itemId/records", requireAuth, async (req, res) => {
+app.get("/api/items/:itemId/records", requireAuth, asyncHandler(async (req, res) => {
   const itemId = Number(req.params.itemId);
   if (!Number.isFinite(itemId) || itemId <= 0) {
-    return res
-      .status(400)
-      .json({ ok: false, message: "itemId가 잘못되었습니다." });
+    return res.status(400).json({ ok: false, message: "itemId가 잘못되었습니다." });
   }
 
   const records = await prisma.record.findMany({
     where: { itemId, userId: req.userId },
     orderBy: [{ date: "asc" }, { id: "asc" }],
     include: {
-      item: { select: { id: true, name: true, size: true } }, // 옵션 표시용
+      item: { select: { id: true, name: true, size: true } },
     },
   });
 
   const stock = await calcStock(req.userId, itemId);
   return res.json({ ok: true, records, stock });
-});
+}));
 
 // POST /api/items/:itemId/records
-// body: { price?, count, date?, type?, memo? }
-// price는 옵션(없어도 OK). OUT일 때는 price 없어도 OK.
-app.post("/api/items/:itemId/records", requireAuth, async (req, res) => {
+app.post("/api/items/:itemId/records", requireAuth, asyncHandler(async (req, res) => {
   const itemId = Number(req.params.itemId);
   if (!Number.isFinite(itemId) || itemId <= 0) {
-    return res
-      .status(400)
-      .json({ ok: false, message: "itemId가 잘못되었습니다." });
+    return res.status(400).json({ ok: false, message: "itemId가 잘못되었습니다." });
   }
 
   const { price, count, date, type, memo } = req.body;
@@ -303,11 +293,11 @@ app.post("/api/items/:itemId/records", requireAuth, async (req, res) => {
 
   const recordType = normType(type);
 
-  //  price optional 처리
+  // price optional
   let priceValue = null;
   if (price != null && price !== "") {
     const p = Number(price);
-    if (Number.isNaN(p) || !Number.isFinite(p) || p < 0) {
+    if (!Number.isFinite(p) || p < 0) {
       return res.status(400).json({ ok: false, message: "price가 잘못되었습니다." });
     }
     priceValue = p;
@@ -327,10 +317,10 @@ app.post("/api/items/:itemId/records", requireAuth, async (req, res) => {
 
   const created = await prisma.record.create({
     data: {
-      itemId,
-      userId: req.userId,
+      item: { connect: { id: itemId } },         
+      user: { connect: { id: req.userId } },
       type: recordType,
-      price: priceValue, 
+      price: priceValue,
       count: numericCount,
       date: date ? new Date(date) : new Date(),
       memo: memo != null && String(memo).trim() !== "" ? String(memo) : null,
@@ -342,17 +332,13 @@ app.post("/api/items/:itemId/records", requireAuth, async (req, res) => {
 
   const stock = await calcStock(req.userId, itemId);
   return res.status(201).json({ ok: true, record: created, stock });
-});
+}));
 
 // PUT /api/items/:itemId/records
-// body: { id, price?, count?, date?, type?, memo? }
-//  price optional + OUT 업데이트 재고체크 유지
-app.put("/api/items/:itemId/records", requireAuth, async (req, res) => {
+app.put("/api/items/:itemId/records", requireAuth, asyncHandler(async (req, res) => {
   const itemId = Number(req.params.itemId);
   if (!Number.isFinite(itemId) || itemId <= 0) {
-    return res
-      .status(400)
-      .json({ ok: false, message: "itemId가 잘못되었습니다." });
+    return res.status(400).json({ ok: false, message: "itemId가 잘못되었습니다." });
   }
 
   const { id, price, count, date, type, memo } = req.body;
@@ -373,13 +359,13 @@ app.put("/api/items/:itemId/records", requireAuth, async (req, res) => {
     return res.status(400).json({ ok: false, message: "count가 잘못되었습니다." });
   }
 
-  //  price optional 처리
+  // price optional
   let nextPrice = undefined; // undefined = 변경 안함
   if (price === null || price === "") {
-    nextPrice = null; // 명시적으로 비우기
+    nextPrice = null;
   } else if (price != null) {
     const p = Number(price);
-    if (Number.isNaN(p) || !Number.isFinite(p) || p < 0) {
+    if (!Number.isFinite(p) || p < 0) {
       return res.status(400).json({ ok: false, message: "price가 잘못되었습니다." });
     }
     nextPrice = p;
@@ -416,15 +402,13 @@ app.put("/api/items/:itemId/records", requireAuth, async (req, res) => {
 
   const stock = await calcStock(req.userId, itemId);
   return res.json({ ok: true, record: updated, stock });
-});
+}));
 
 // DELETE /api/items/:itemId/records?id=123
-app.delete("/api/items/:itemId/records", requireAuth, async (req, res) => {
+app.delete("/api/items/:itemId/records", requireAuth, asyncHandler(async (req, res) => {
   const itemId = Number(req.params.itemId);
   if (!Number.isFinite(itemId) || itemId <= 0) {
-    return res
-      .status(400)
-      .json({ ok: false, message: "itemId가 잘못되었습니다." });
+    return res.status(400).json({ ok: false, message: "itemId가 잘못되었습니다." });
   }
 
   const id = Number(req.query.id);
@@ -441,45 +425,36 @@ app.delete("/api/items/:itemId/records", requireAuth, async (req, res) => {
 
   const stock = await calcStock(req.userId, itemId);
   return res.json({ ok: true, stock });
-});
+}));
 
 // 전체 기록 조회 (입/출고 페이지용)
-app.get("/api/records", requireAuth, async (req, res) => {
-  console.log("HIT /api/records", { userId: req.userId, q: req.query });
+app.get("/api/records", requireAuth, asyncHandler(async (req, res) => {
+  const type = String(req.query.type || "").toUpperCase();
+  const priceMissing = String(req.query.priceMissing || "") === "1";
 
-  try {
-    const type = String(req.query.type || "").toUpperCase();
-    const priceMissing = String(req.query.priceMissing || "") === "1";
+  const where = { userId: req.userId };
+  if (type === "IN" || type === "OUT") where.type = type;
+  if (priceMissing) where.price = null;
 
-    const where = { userId: req.userId };
-    if (type === "IN" || type === "OUT") where.type = type;
-    if (priceMissing) where.price = null;
+  const records = await prisma.record.findMany({
+    where,
+    orderBy: [{ date: "desc" }, { id: "desc" }],
+    include: { item: { select: { id: true, name: true, size: true } } },
+  });
 
-    console.log("BEFORE prisma.record.findMany", where);
+  return res.json({ ok: true, records });
+}));
 
-    const records = await prisma.record.findMany({
-      where,
-      orderBy: [{ date: "desc" }, { id: "desc" }],
-      include: { item: { select: { id: true, name: true, size: true } } },
-    });
-
-    console.log("AFTER prisma.record.findMany", { count: records.length });
-
-    return res.json({ ok: true, records });
-  } catch (err) {
-    console.error("GET /api/records error:", err);
-    return res.status(500).json({ ok: false, message: "server error" });
-  }
-});
-
-//추가 
+// ================== ERROR HANDLER ==================
 app.use((err, req, res, next) => {
   console.error("UNHANDLED ERROR:", err);
-  res.status(500).json({ ok: false, message: "server error" });
+  if (res.headersSent) return next(err);
+  res.status(500).json({
+    ok: false,
+    message: "server error",
+    error: String(err?.message || err),
+  });
 });
-
-
-
 
 // ================== EXPORT ==================
 export default app;
