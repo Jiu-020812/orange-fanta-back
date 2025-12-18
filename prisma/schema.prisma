@@ -64,7 +64,7 @@ model Record {
   // 기존 그대로 사용:
   // IN  -> 매입 단가
   // OUT -> 판매 단가(출고 단가)
-  price Int
+  price Int?
 
   count Int        @default(1)
   date  DateTime
