@@ -44,6 +44,10 @@ model Item {
   createdAt DateTime     @default(now())
   memo      String?
 
+  //  바코드
+  barcode   String?
+
+
   // FK
   userId Int
   user   User   @relation(fields: [userId], references: [id])
@@ -53,6 +57,9 @@ model Item {
 
   // 같은 유저의 같은 카테고리에서 legacyId로 정확히 매칭
   @@unique([userId, category, legacyId])
+
+  //  같은 유저 안에서 바코드는 유니크
+  @@unique([userId, barcode])
 }
 
 model Record {

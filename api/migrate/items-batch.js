@@ -22,12 +22,12 @@ export default async function itemsBatchHandler(req, res) {
     // 지금은 서버쪽에서 이미 userId 넣는 로직이 있다 가정하고 그대로 받음.
 
     const data = items.map((it) => ({
-      userId: it.userId,               // ✅ migrate 코드에서 넣어줘야 함
+      userId: it.userId,               //  migrate 코드에서 넣어줘야 함
       name: it.name ?? "",
       size: it.size ?? "",
       imageUrl: it.imageUrl ?? null,
       category: it.category ?? "FOOD", // 없으면 기본 FOOD(원하면 SHOE)
-      legacyId: String(it.legacyId ?? it.id ?? ""), // ✅ 문자열로 저장
+      legacyId: String(it.legacyId ?? it.id ?? ""), // 문자열로 저장
       createdAt: it.createdAt ? new Date(it.createdAt) : new Date(),
     })).filter((x) => x.userId && x.name && x.size && x.legacyId); // 최소 조건
 
