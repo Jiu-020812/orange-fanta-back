@@ -24,25 +24,20 @@ const allowedOrigins = [
 const asyncHandler = (fn) => (req, res, next) =>
   Promise.resolve(fn(req, res, next)).catch(next);
 
-const normType = (t) => (String(t).toUpperCase() === "OUT" ? "OUT" : "IN");
+const normType = (t) => (String(t || "").toUpperCase() === "OUT" ? "OUT" : "IN");
 
 // ================== CORS ==================
 app.use((req, res, next) => {
   const origin = req.headers.origin;
+
   if (origin && allowedOrigins.includes(origin)) {
     res.setHeader("Access-Control-Allow-Origin", origin);
     res.setHeader("Vary", "Origin");
     res.setHeader("Access-Control-Allow-Credentials", "true");
   }
 
-  res.setHeader(
-    "Access-Control-Allow-Methods",
-    "GET,POST,PUT,PATCH,DELETE,OPTIONS"
-  );
-  res.setHeader(
-    "Access-Control-Allow-Headers",
-    "Content-Type, Authorization"
-  );
+  res.setHeader("Access-Control-Allow-Methods", "GET,POST,PUT,PATCH,DELETE,OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
 
   if (req.method === "OPTIONS") return res.sendStatus(204);
   next();
@@ -52,7 +47,7 @@ app.use((req, res, next) => {
 app.use(cookieParser());
 app.use(express.json({ limit: "20mb" }));
 
-// 🔹 기존 me 라우트 (/api/me)
+// 기존 me 라우트 (/api/me)
 app.use("/api/me", meRouter);
 
 // ================== MIGRATE ==================
@@ -108,14 +103,10 @@ app.post(
   "/api/auth/signup",
   asyncHandler(async (req, res) => {
     const { email, password, name } = req.body;
-    if (!email || !password) {
-      return res.status(400).json({ ok: false });
-    }
+    if (!email || !password) return res.status(400).json({ ok: false });
 
     const exists = await prisma.user.findUnique({ where: { email } });
-    if (exists) {
-      return res.status(409).json({ ok: false });
-    }
+    if (exists) return res.status(409).json({ ok: false });
 
     const hashed = await bcrypt.hash(password, 10);
     const user = await prisma.user.create({
@@ -123,7 +114,6 @@ app.post(
     });
 
     const token = createToken(user.id);
-
     res
       .cookie("token", token, {
         httpOnly: true,
@@ -131,10 +121,7 @@ app.post(
         sameSite: "none",
         path: "/",
       })
-      .json({
-        ok: true,
-        user: { id: user.id, email: user.email, name: user.name },
-      });
+      .json({ ok: true, user: { id: user.id, email: user.email, name: user.name } });
   })
 );
 
@@ -143,6 +130,7 @@ app.post(
   "/api/auth/login",
   asyncHandler(async (req, res) => {
     const { email, password } = req.body;
+
     const user = await prisma.user.findUnique({ where: { email } });
     if (!user) return res.status(401).json({ ok: false });
 
@@ -150,7 +138,6 @@ app.post(
     if (!ok) return res.status(401).json({ ok: false });
 
     const token = createToken(user.id);
-
     res
       .cookie("token", token, {
         httpOnly: true,
@@ -158,24 +145,17 @@ app.post(
         sameSite: "none",
         path: "/",
       })
-      .json({
-        ok: true,
-        user: { id: user.id, email: user.email, name: user.name },
-      });
+      .json({ ok: true, user: { id: user.id, email: user.email, name: user.name } });
   })
 );
 
 // POST /api/auth/logout
 app.post("/api/auth/logout", (req, res) => {
-  res.clearCookie("token", {
-    path: "/",
-    secure: true,
-    sameSite: "none",
-  });
+  res.clearCookie("token", { path: "/", secure: true, sameSite: "none" });
   res.json({ ok: true });
 });
 
-// 🔥 추가: GET /api/auth/me (프론트 호환용)
+// GET /api/auth/me (프론트 호환용)
 app.get(
   "/api/auth/me",
   requireAuth,
@@ -189,6 +169,8 @@ app.get(
 );
 
 // ================== ITEMS ==================
+
+// GET /api/items
 app.get(
   "/api/items",
   requireAuth,
@@ -222,9 +204,7 @@ app.post(
         where: { userId: req.userId, barcode: bc },
       });
       if (exists) {
-        return res
-          .status(409)
-          .json({ ok: false, message: "이미 등록된 바코드입니다." });
+        return res.status(409).json({ ok: false, message: "이미 등록된 바코드입니다." });
       }
     }
 
@@ -243,7 +223,78 @@ app.post(
   })
 );
 
-// GET /api/items/lookup
+// PUT /api/items/:id (아이템 수정)
+app.put(
+  "/api/items/:id",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id) || id <= 0) return res.status(400).json({ ok: false });
+
+    const existing = await prisma.item.findFirst({
+      where: { id, userId: req.userId },
+      select: { id: true },
+    });
+    if (!existing) return res.status(404).json({ ok: false });
+
+    const { name, size, imageUrl, memo, category, barcode } = req.body;
+
+    // barcode 중복 체크(입력값이 있을 때만)
+    const bc =
+      barcode === null || barcode === undefined
+        ? undefined
+        : String(barcode).trim() === ""
+        ? null
+        : String(barcode).trim();
+
+    if (bc !== undefined && bc !== null) {
+      const dup = await prisma.item.findFirst({
+        where: { userId: req.userId, barcode: bc, NOT: { id } },
+        select: { id: true },
+      });
+      if (dup) {
+        return res.status(409).json({ ok: false, message: "이미 등록된 바코드입니다." });
+      }
+    }
+
+    const updated = await prisma.item.update({
+      where: { id },
+      data: {
+        ...(name !== undefined ? { name } : {}),
+        ...(size !== undefined ? { size } : {}),
+        ...(imageUrl !== undefined ? { imageUrl } : {}),
+        ...(memo !== undefined ? { memo } : {}),
+        ...(category !== undefined ? { category } : {}),
+        ...(bc !== undefined ? { barcode: bc } : {}),
+      },
+    });
+
+    res.json(updated);
+  })
+);
+
+// DELETE /api/items/:id (아이템 삭제 + 해당 아이템 기록 삭제)
+app.delete(
+  "/api/items/:id",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id) || id <= 0) return res.status(400).json({ ok: false });
+
+    const existing = await prisma.item.findFirst({
+      where: { id, userId: req.userId },
+      select: { id: true },
+    });
+    if (!existing) return res.status(404).json({ ok: false });
+
+    await prisma.record.deleteMany({ where: { userId: req.userId, itemId: id } });
+    await prisma.item.delete({ where: { id } });
+
+    res.status(204).end();
+  })
+);
+
+// GET /api/items/lookup (barcode lookup)
 app.get(
   "/api/items/lookup",
   requireAuth,
@@ -283,7 +334,195 @@ async function calcStock(userId, itemId) {
   return inSum - outSum;
 }
 
-// GET /api/records (입/출고 페이지용 전체 기록 조회)
+//  디테일 페이지용: GET /api/items/:itemId/records
+app.get(
+  "/api/items/:itemId/records",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const itemId = Number(req.params.itemId);
+    if (!Number.isFinite(itemId) || itemId <= 0) {
+      return res.status(400).json({ ok: false, message: "itemId가 잘못되었습니다." });
+    }
+
+    const item = await prisma.item.findFirst({
+      where: { id: itemId, userId: req.userId },
+      select: { id: true, name: true, size: true, imageUrl: true },
+    });
+    if (!item) return res.status(404).json({ ok: false, message: "item not found" });
+
+    const records = await prisma.record.findMany({
+      where: { userId: req.userId, itemId },
+      orderBy: [{ date: "asc" }, { id: "asc" }],
+      include: { item: { select: { id: true, name: true, size: true, imageUrl: true } } },
+    });
+
+    const stock = await calcStock(req.userId, itemId);
+    return res.json({ ok: true, item, records, stock });
+  })
+);
+
+//  디테일/단건 추가: POST /api/items/:itemId/records
+app.post(
+  "/api/items/:itemId/records",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const itemId = Number(req.params.itemId);
+    if (!Number.isFinite(itemId) || itemId <= 0) {
+      return res.status(400).json({ ok: false, message: "itemId가 잘못되었습니다." });
+    }
+
+    const existsItem = await prisma.item.findFirst({
+      where: { id: itemId, userId: req.userId },
+      select: { id: true },
+    });
+    if (!existsItem) return res.status(404).json({ ok: false, message: "item not found" });
+
+    const { price, count, date, type, memo } = req.body;
+
+    const recordType = normType(type);
+    const numericCount = count == null ? 1 : Number(count);
+    if (!Number.isFinite(numericCount) || numericCount <= 0) {
+      return res.status(400).json({ ok: false, message: "count가 잘못되었습니다." });
+    }
+
+    let priceValue = null;
+    if (price != null && price !== "") {
+      const p = Number(price);
+      if (!Number.isFinite(p) || p < 0) {
+        return res.status(400).json({ ok: false, message: "price가 잘못되었습니다." });
+      }
+      priceValue = p;
+    }
+
+    // OUT 재고 부족 체크
+    if (recordType === "OUT") {
+      const stockNow = await calcStock(req.userId, itemId);
+      if (numericCount > stockNow) {
+        return res.status(400).json({
+          ok: false,
+          message: `재고 부족: 현재 재고(${stockNow})보다 많이 출고할 수 없습니다.`,
+          stock: stockNow,
+        });
+      }
+    }
+
+    const created = await prisma.record.create({
+      data: {
+        userId: req.userId,
+        itemId,
+        type: recordType,
+        price: priceValue,
+        count: numericCount,
+        date: date ? new Date(date) : new Date(),
+        memo: memo != null && String(memo).trim() !== "" ? String(memo) : null,
+      },
+      include: { item: { select: { id: true, name: true, size: true, imageUrl: true } } },
+    });
+
+    const stock = await calcStock(req.userId, itemId);
+    return res.status(201).json({ ok: true, record: created, stock });
+  })
+);
+
+//  기록 수정: PUT /api/items/:itemId/records
+app.put(
+  "/api/items/:itemId/records",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const itemId = Number(req.params.itemId);
+    if (!Number.isFinite(itemId) || itemId <= 0) {
+      return res.status(400).json({ ok: false, message: "itemId가 잘못되었습니다." });
+    }
+
+    const { id, price, count, date, type, memo } = req.body;
+    const numericId = Number(id);
+    if (!Number.isFinite(numericId) || numericId <= 0) {
+      return res.status(400).json({ ok: false, message: "id가 잘못되었습니다." });
+    }
+
+    const existing = await prisma.record.findFirst({
+      where: { id: numericId, itemId, userId: req.userId },
+    });
+    if (!existing) return res.status(404).json({ ok: false, message: "record not found" });
+
+    const nextType = type != null ? normType(type) : existing.type;
+    const nextCount = count != null ? Number(count) : existing.count;
+
+    if (!Number.isFinite(nextCount) || nextCount <= 0) {
+      return res.status(400).json({ ok: false, message: "count가 잘못되었습니다." });
+    }
+
+    let nextPrice = undefined; // undefined = 변경 안함
+    if (price === null || price === "") {
+      nextPrice = null;
+    } else if (price != null) {
+      const p = Number(price);
+      if (!Number.isFinite(p) || p < 0) {
+        return res.status(400).json({ ok: false, message: "price가 잘못되었습니다." });
+      }
+      nextPrice = p;
+    }
+
+    // OUT 업데이트 재고 체크
+    if (nextType === "OUT") {
+      const stockNow = await calcStock(req.userId, itemId);
+      const stockExcludingThis =
+        existing.type === "OUT" ? stockNow + existing.count : stockNow;
+
+      if (nextCount > stockExcludingThis) {
+        return res.status(400).json({
+          ok: false,
+          message: `재고 부족: 현재 재고(${stockExcludingThis})보다 많이 출고할 수 없습니다.`,
+          stock: stockExcludingThis,
+        });
+      }
+    }
+
+    const updated = await prisma.record.update({
+      where: { id: numericId },
+      data: {
+        ...(nextPrice !== undefined ? { price: nextPrice } : {}),
+        ...(count != null ? { count: nextCount } : {}),
+        ...(date ? { date: new Date(date) } : {}),
+        ...(type != null ? { type: nextType } : {}),
+        ...(memo != null ? { memo: memo ? String(memo) : null } : {}),
+      },
+      include: { item: { select: { id: true, name: true, size: true, imageUrl: true } } },
+    });
+
+    const stock = await calcStock(req.userId, itemId);
+    return res.json({ ok: true, record: updated, stock });
+  })
+);
+
+//  기록 삭제: DELETE /api/items/:itemId/records?id=123
+app.delete(
+  "/api/items/:itemId/records",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const itemId = Number(req.params.itemId);
+    if (!Number.isFinite(itemId) || itemId <= 0) {
+      return res.status(400).json({ ok: false, message: "itemId가 잘못되었습니다." });
+    }
+
+    const id = Number(req.query.id);
+    if (!Number.isFinite(id) || id <= 0) {
+      return res.status(400).json({ ok: false, message: "id가 잘못되었습니다." });
+    }
+
+    const existing = await prisma.record.findFirst({
+      where: { id, itemId, userId: req.userId },
+    });
+    if (!existing) return res.status(404).json({ ok: false, message: "record not found" });
+
+    await prisma.record.delete({ where: { id } });
+
+    const stock = await calcStock(req.userId, itemId);
+    return res.json({ ok: true, stock });
+  })
+);
+
+//  입/출고 페이지용 전체 기록 조회: GET /api/records
 app.get(
   "/api/records",
   requireAuth,
@@ -307,7 +546,7 @@ app.get(
   })
 );
 
-// POST /api/records/batch
+//  배치 입고/출고: POST /api/records/batch
 app.post(
   "/api/records/batch",
   requireAuth,
@@ -333,9 +572,7 @@ app.post(
       for (const row of data) {
         const stock = await calcStock(req.userId, row.itemId);
         if (row.count > stock) {
-          return res
-            .status(400)
-            .json({ ok: false, message: "재고 부족" });
+          return res.status(400).json({ ok: false, message: "재고 부족" });
         }
       }
     }
@@ -348,7 +585,7 @@ app.post(
 // ================== ERROR ==================
 app.use((err, req, res, next) => {
   console.error("ERROR:", err);
-  res.status(500).json({ ok: false, message: "server error" });
+  res.status(500).json({ ok: false, message: "server error", error: String(err?.message || err) });
 });
 
 // ================== EXPORT ==================
