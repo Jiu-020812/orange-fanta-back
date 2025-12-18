@@ -410,31 +410,40 @@ app.delete("/api/items/:itemId/records", requireAuth, async (req, res) => {
 
 // 전체 기록 조회 (입/출고 페이지용)
 app.get("/api/records", requireAuth, async (req, res) => {
-  const type = String(req.query.type || "").toUpperCase(); // IN | OUT | ""
-  const priceMissing = String(req.query.priceMissing || "") === "1";
+  console.log("HIT /api/records", { userId: req.userId, q: req.query });
 
-  const where = { userId: req.userId };
+  try {
+    const type = String(req.query.type || "").toUpperCase();
+    const priceMissing = String(req.query.priceMissing || "") === "1";
 
-  if (type === "IN" || type === "OUT") where.type = type;
-  if (priceMissing) where.price = null;
+    const where = { userId: req.userId };
+    if (type === "IN" || type === "OUT") where.type = type;
+    if (priceMissing) where.price = null;
 
-  const records = await prisma.record.findMany({
-    where: { itemId, userId: req.userId },
-    orderBy: [{ date: "asc" }, { id: "asc" }],
-    include: {
-      item: {
-        select: {
-          id: true,
-          name: true,
-          size: true,
-          category: true,
-        },
-      },
-    },
-  });
+    console.log("BEFORE prisma.record.findMany", where);
 
-  res.json({ ok: true, records });
+    const records = await prisma.record.findMany({
+      where,
+      orderBy: [{ date: "desc" }, { id: "desc" }],
+      include: { item: { select: { id: true, name: true, size: true } } },
+    });
+
+    console.log("AFTER prisma.record.findMany", { count: records.length });
+
+    return res.json({ ok: true, records });
+  } catch (err) {
+    console.error("GET /api/records error:", err);
+    return res.status(500).json({ ok: false, message: "server error" });
+  }
 });
+
+//추가 
+app.use((err, req, res, next) => {
+  console.error("UNHANDLED ERROR:", err);
+  res.status(500).json({ ok: false, message: "server error" });
+});
+
+
 
 
 // ================== EXPORT ==================
