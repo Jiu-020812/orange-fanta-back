@@ -262,7 +262,7 @@ async function calcStock(userId, itemId) {
 }
 
 // GET /api/items/:itemId/records
-// ✅ item(name/size) 같이 내려줌 + 응답 형태 통일
+// item(name/size) 같이 내려줌 + 응답 형태 통일
 app.get("/api/items/:itemId/records", requireAuth, async (req, res) => {
   const itemId = Number(req.params.itemId);
   if (!Number.isFinite(itemId) || itemId <= 0) {
@@ -275,7 +275,7 @@ app.get("/api/items/:itemId/records", requireAuth, async (req, res) => {
     where: { itemId, userId: req.userId },
     orderBy: [{ date: "asc" }, { id: "asc" }],
     include: {
-      item: { select: { id: true, name: true, size: true } }, // ✅ 옵션 표시용
+      item: { select: { id: true, name: true, size: true } }, // 옵션 표시용
     },
   });
 
@@ -285,7 +285,7 @@ app.get("/api/items/:itemId/records", requireAuth, async (req, res) => {
 
 // POST /api/items/:itemId/records
 // body: { price?, count, date?, type?, memo? }
-// ✅ price는 옵션(없어도 OK). OUT일 때는 price 없어도 OK.
+// price는 옵션(없어도 OK). OUT일 때는 price 없어도 OK.
 app.post("/api/items/:itemId/records", requireAuth, async (req, res) => {
   const itemId = Number(req.params.itemId);
   if (!Number.isFinite(itemId) || itemId <= 0) {
@@ -303,7 +303,7 @@ app.post("/api/items/:itemId/records", requireAuth, async (req, res) => {
 
   const recordType = normType(type);
 
-  // ✅ price optional 처리
+  //  price optional 처리
   let priceValue = null;
   if (price != null && price !== "") {
     const p = Number(price);
@@ -313,7 +313,7 @@ app.post("/api/items/:itemId/records", requireAuth, async (req, res) => {
     priceValue = p;
   }
 
-  // ✅ OUT 재고 부족 체크
+  // OUT 재고 부족 체크
   if (recordType === "OUT") {
     const stockNow = await calcStock(req.userId, itemId);
     if (numericCount > stockNow) {
@@ -330,7 +330,7 @@ app.post("/api/items/:itemId/records", requireAuth, async (req, res) => {
       itemId,
       userId: req.userId,
       type: recordType,
-      price: priceValue, // ✅ null 가능
+      price: priceValue, 
       count: numericCount,
       date: date ? new Date(date) : new Date(),
       memo: memo != null && String(memo).trim() !== "" ? String(memo) : null,
@@ -346,7 +346,7 @@ app.post("/api/items/:itemId/records", requireAuth, async (req, res) => {
 
 // PUT /api/items/:itemId/records
 // body: { id, price?, count?, date?, type?, memo? }
-// ✅ price optional + OUT 업데이트 재고체크 유지
+//  price optional + OUT 업데이트 재고체크 유지
 app.put("/api/items/:itemId/records", requireAuth, async (req, res) => {
   const itemId = Number(req.params.itemId);
   if (!Number.isFinite(itemId) || itemId <= 0) {
@@ -373,7 +373,7 @@ app.put("/api/items/:itemId/records", requireAuth, async (req, res) => {
     return res.status(400).json({ ok: false, message: "count가 잘못되었습니다." });
   }
 
-  // ✅ price optional 처리
+  //  price optional 처리
   let nextPrice = undefined; // undefined = 변경 안함
   if (price === null || price === "") {
     nextPrice = null; // 명시적으로 비우기
@@ -385,7 +385,7 @@ app.put("/api/items/:itemId/records", requireAuth, async (req, res) => {
     nextPrice = p;
   }
 
-  // ✅ OUT 업데이트 재고 체크
+  // OUT 업데이트 재고 체크
   if (nextType === "OUT") {
     const stockNow = await calcStock(req.userId, itemId);
     const stockExcludingThis =
