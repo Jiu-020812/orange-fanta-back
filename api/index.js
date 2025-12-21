@@ -36,7 +36,10 @@ app.use((req, res, next) => {
     res.setHeader("Access-Control-Allow-Credentials", "true");
   }
 
-  res.setHeader("Access-Control-Allow-Methods", "GET,POST,PUT,PATCH,DELETE,OPTIONS");
+  res.setHeader(
+    "Access-Control-Allow-Methods",
+    "GET,POST,PUT,PATCH,DELETE,OPTIONS"
+  );
   res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
 
   if (req.method === "OPTIONS") return res.sendStatus(204);
@@ -121,7 +124,10 @@ app.post(
         sameSite: "none",
         path: "/",
       })
-      .json({ ok: true, user: { id: user.id, email: user.email, name: user.name } });
+      .json({
+        ok: true,
+        user: { id: user.id, email: user.email, name: user.name },
+      });
   })
 );
 
@@ -145,7 +151,10 @@ app.post(
         sameSite: "none",
         path: "/",
       })
-      .json({ ok: true, user: { id: user.id, email: user.email, name: user.name } });
+      .json({
+        ok: true,
+        user: { id: user.id, email: user.email, name: user.name },
+      });
   })
 );
 
@@ -204,7 +213,9 @@ app.post(
         where: { userId: req.userId, barcode: bc },
       });
       if (exists) {
-        return res.status(409).json({ ok: false, message: "이미 등록된 바코드입니다." });
+        return res
+          .status(409)
+          .json({ ok: false, message: "이미 등록된 바코드입니다." });
       }
     }
 
@@ -229,7 +240,8 @@ app.put(
   requireAuth,
   asyncHandler(async (req, res) => {
     const id = Number(req.params.id);
-    if (!Number.isFinite(id) || id <= 0) return res.status(400).json({ ok: false });
+    if (!Number.isFinite(id) || id <= 0)
+      return res.status(400).json({ ok: false });
 
     const existing = await prisma.item.findFirst({
       where: { id, userId: req.userId },
@@ -253,7 +265,9 @@ app.put(
         select: { id: true },
       });
       if (dup) {
-        return res.status(409).json({ ok: false, message: "이미 등록된 바코드입니다." });
+        return res
+          .status(409)
+          .json({ ok: false, message: "이미 등록된 바코드입니다." });
       }
     }
 
@@ -279,7 +293,8 @@ app.delete(
   requireAuth,
   asyncHandler(async (req, res) => {
     const id = Number(req.params.id);
-    if (!Number.isFinite(id) || id <= 0) return res.status(400).json({ ok: false });
+    if (!Number.isFinite(id) || id <= 0)
+      return res.status(400).json({ ok: false });
 
     const existing = await prisma.item.findFirst({
       where: { id, userId: req.userId },
@@ -287,7 +302,9 @@ app.delete(
     });
     if (!existing) return res.status(404).json({ ok: false });
 
-    await prisma.record.deleteMany({ where: { userId: req.userId, itemId: id } });
+    await prisma.record.deleteMany({
+      where: { userId: req.userId, itemId: id },
+    });
     await prisma.item.delete({ where: { id } });
 
     res.status(204).end();
@@ -334,30 +351,74 @@ async function calcStock(userId, itemId) {
   return inSum - outSum;
 }
 
-//  디테일 페이지용: GET /api/items/:itemId/records
+//  디테일 페이지용: GET /api/items/:itemId/records  (✅ 타이밍 판별용 코드 포함)
 app.get(
   "/api/items/:itemId/records",
   requireAuth,
   asyncHandler(async (req, res) => {
+    const t0 = Date.now();
+
     const itemId = Number(req.params.itemId);
     if (!Number.isFinite(itemId) || itemId <= 0) {
       return res.status(400).json({ ok: false, message: "itemId가 잘못되었습니다." });
     }
 
+    // 1) item 조회 시간
+    const tItem0 = Date.now();
     const item = await prisma.item.findFirst({
       where: { id: itemId, userId: req.userId },
       select: { id: true, name: true, size: true, imageUrl: true },
     });
+    const tItem1 = Date.now();
+
     if (!item) return res.status(404).json({ ok: false, message: "item not found" });
 
+    // 2) records 쿼리 시간
+    const tRec0 = Date.now();
     const records = await prisma.record.findMany({
       where: { userId: req.userId, itemId },
       orderBy: [{ date: "asc" }, { id: "asc" }],
       include: { item: { select: { id: true, name: true, size: true, imageUrl: true } } },
     });
+    const tRec1 = Date.now();
 
+    // 3) stock 계산 시간
+    const tStock0 = Date.now();
     const stock = await calcStock(req.userId, itemId);
-    return res.json({ ok: true, item, records, stock });
+    const tStock1 = Date.now();
+
+    // 4) stringify 시간 + bytes
+    const tStr0 = Date.now();
+    const payload = {
+      ok: true,
+      item,
+      records,
+      stock,
+      timing: {
+        item_ms: tItem1 - tItem0,
+        records_query_ms: tRec1 - tRec0,
+        stock_ms: tStock1 - tStock0,
+        stringify_ms: 0, // 아래에서 채움
+        total_ms: 0,     // 아래에서 채움
+      },
+    };
+
+    const json = JSON.stringify(payload);
+    const tStr1 = Date.now();
+
+    payload.timing.stringify_ms = tStr1 - tStr0;
+    payload.timing.total_ms = tStr1 - t0;
+
+    console.log("[DETAIL RECORDS TIMING]", {
+      userId: req.userId,
+      itemId,
+      ...payload.timing,
+      recordsCount: Array.isArray(records) ? records.length : 0,
+      bytes: Buffer.byteLength(json, "utf8"),
+    });
+
+    res.setHeader("Content-Type", "application/json");
+    res.send(json);
   })
 );
 
@@ -585,7 +646,11 @@ app.post(
 // ================== ERROR ==================
 app.use((err, req, res, next) => {
   console.error("ERROR:", err);
-  res.status(500).json({ ok: false, message: "server error", error: String(err?.message || err) });
+  res.status(500).json({
+    ok: false,
+    message: "server error",
+    error: String(err?.message || err),
+  });
 });
 
 // ================== EXPORT ==================
