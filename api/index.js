@@ -351,74 +351,85 @@ async function calcStock(userId, itemId) {
   return inSum - outSum;
 }
 
-//  디테일 페이지용: GET /api/items/:itemId/records  (✅ 타이밍 판별용 코드 포함)
+/**
+ * ✅ 디테일 페이지용: GET /api/items/:itemId/records (v2)
+ * - 기존: item 조회 1번 + records 조회 1번 + stock groupBy 1번 (총 3번 DB 왕복)
+ * - 개선: item + records를 1번에 가져오고, stock은 JS로 계산 (DB 왕복 1번)
+ * - 그리고 timing 로그는 그대로 남김
+ */
 app.get(
   "/api/items/:itemId/records",
   requireAuth,
   asyncHandler(async (req, res) => {
     const t0 = Date.now();
-
     const itemId = Number(req.params.itemId);
+
     if (!Number.isFinite(itemId) || itemId <= 0) {
       return res.status(400).json({ ok: false, message: "itemId가 잘못되었습니다." });
     }
 
-    // 1) item 조회 시간
-    const tItem0 = Date.now();
-    const item = await prisma.item.findFirst({
+    // ✅ item + records를 한 번에
+    const t1 = Date.now();
+    const itemWithRecords = await prisma.item.findFirst({
       where: { id: itemId, userId: req.userId },
-      select: { id: true, name: true, size: true, imageUrl: true },
+      select: {
+        id: true,
+        name: true,
+        size: true,
+        imageUrl: true,
+        records: {
+          where: { userId: req.userId },
+          orderBy: [{ date: "asc" }, { id: "asc" }],
+          select: {
+            id: true,
+            type: true,
+            price: true,
+            count: true,
+            date: true,
+            memo: true,
+          },
+        },
+      },
     });
-    const tItem1 = Date.now();
+    const t2 = Date.now();
 
-    if (!item) return res.status(404).json({ ok: false, message: "item not found" });
+    if (!itemWithRecords) {
+      return res.status(404).json({ ok: false, message: "item not found" });
+    }
 
-    // 2) records 쿼리 시간
-    const tRec0 = Date.now();
-    const records = await prisma.record.findMany({
-      where: { userId: req.userId, itemId },
-      orderBy: [{ date: "asc" }, { id: "asc" }],
-      include: { item: { select: { id: true, name: true, size: true, imageUrl: true } } },
-    });
-    const tRec1 = Date.now();
+    // ✅ stock은 JS에서 계산 (DB 왕복 제거)
+    const t3 = Date.now();
+    let stock = 0;
+    for (const r of itemWithRecords.records) {
+      stock += r.type === "IN" ? (r.count ?? 0) : -(r.count ?? 0);
+    }
+    const t4 = Date.now();
 
-    // 3) stock 계산 시간
-    const tStock0 = Date.now();
-    const stock = await calcStock(req.userId, itemId);
-    const tStock1 = Date.now();
-
-    // 4) stringify 시간 + bytes
-    const tStr0 = Date.now();
     const payload = {
       ok: true,
-      item,
-      records,
+      item: {
+        id: itemWithRecords.id,
+        name: itemWithRecords.name,
+        size: itemWithRecords.size,
+        imageUrl: itemWithRecords.imageUrl,
+      },
+      records: itemWithRecords.records,
       stock,
       timing: {
-        item_ms: tItem1 - tItem0,
-        records_query_ms: tRec1 - tRec0,
-        stock_ms: tStock1 - tStock0,
-        stringify_ms: 0, // 아래에서 채움
-        total_ms: 0,     // 아래에서 채움
+        one_query_ms: t2 - t1,
+        stock_js_ms: t4 - t3,
+        total_ms: t4 - t0,
       },
     };
 
-    const json = JSON.stringify(payload);
-    const tStr1 = Date.now();
-
-    payload.timing.stringify_ms = tStr1 - tStr0;
-    payload.timing.total_ms = tStr1 - t0;
-
-    console.log("[DETAIL RECORDS TIMING]", {
+    console.log("[DETAIL RECORDS TIMING v2]", {
       userId: req.userId,
       itemId,
       ...payload.timing,
-      recordsCount: Array.isArray(records) ? records.length : 0,
-      bytes: Buffer.byteLength(json, "utf8"),
+      recordsCount: Array.isArray(payload.records) ? payload.records.length : 0,
     });
 
-    res.setHeader("Content-Type", "application/json");
-    res.send(json);
+    return res.json(payload);
   })
 );
 
