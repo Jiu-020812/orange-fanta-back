@@ -177,20 +177,155 @@ app.get(
   })
 );
 
+// ================== CATEGORIES ==================
+
+// GET /api/categories
+app.get(
+  "/api/categories",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const categories = await prisma.category.findMany({
+      where: { userId: req.userId },
+      orderBy: [{ sortOrder: "asc" }, { id: "asc" }],
+    });
+    res.json(categories);
+  })
+);
+
+// POST /api/categories  body: { name, sortOrder? }
+app.post(
+  "/api/categories",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const name = String(req.body?.name ?? "").trim();
+    const sortOrder =
+      req.body?.sortOrder == null ? undefined : Number(req.body.sortOrder);
+
+    if (!name) return res.status(400).json({ ok: false, message: "name required" });
+
+    const exists = await prisma.category.findFirst({
+      where: { userId: req.userId, name },
+      select: { id: true },
+    });
+    if (exists) return res.status(409).json({ ok: false, message: "duplicate name" });
+
+    let finalSortOrder = sortOrder;
+    if (finalSortOrder == null || !Number.isFinite(finalSortOrder)) {
+      const last = await prisma.category.findFirst({
+        where: { userId: req.userId },
+        orderBy: [{ sortOrder: "desc" }, { id: "desc" }],
+        select: { sortOrder: true },
+      });
+      finalSortOrder = (last?.sortOrder ?? 0) + 1;
+    }
+
+    const created = await prisma.category.create({
+      data: { userId: req.userId, name, sortOrder: finalSortOrder },
+    });
+
+    res.status(201).json(created);
+  })
+);
+
+// PATCH /api/categories/:id  body: { name?, sortOrder? }
+app.patch(
+  "/api/categories/:id",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id) || id <= 0) return res.status(400).json({ ok: false });
+
+    const existing = await prisma.category.findFirst({
+      where: { id, userId: req.userId },
+      select: { id: true },
+    });
+    if (!existing) return res.status(404).json({ ok: false });
+
+    const data = {};
+
+    if (req.body?.name !== undefined) {
+      const name = String(req.body.name ?? "").trim();
+      if (!name) return res.status(400).json({ ok: false, message: "name required" });
+
+      const dup = await prisma.category.findFirst({
+        where: { userId: req.userId, name, NOT: { id } },
+        select: { id: true },
+      });
+      if (dup) return res.status(409).json({ ok: false, message: "duplicate name" });
+
+      data.name = name;
+    }
+
+    if (req.body?.sortOrder !== undefined) {
+      const sortOrder = Number(req.body.sortOrder);
+      if (!Number.isFinite(sortOrder)) {
+        return res.status(400).json({ ok: false, message: "sortOrder invalid" });
+      }
+      data.sortOrder = sortOrder;
+    }
+
+    const updated = await prisma.category.update({
+      where: { id },
+      data,
+    });
+
+    res.json(updated);
+  })
+);
+
+// DELETE /api/categories/:id  (아이템은 '미분류'로 이동 후 삭제)
+app.delete(
+  "/api/categories/:id",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id) || id <= 0) return res.status(400).json({ ok: false });
+
+    const target = await prisma.category.findFirst({
+      where: { id, userId: req.userId },
+      select: { id: true, name: true },
+    });
+    if (!target) return res.status(404).json({ ok: false });
+
+    // 미분류 카테고리 확보
+    const uncategorized =
+      (await prisma.category.findFirst({
+        where: { userId: req.userId, name: "미분류" },
+        select: { id: true },
+      })) ||
+      (await prisma.category.create({
+        data: { userId: req.userId, name: "미분류", sortOrder: 0 },
+        select: { id: true },
+      }));
+
+    if (uncategorized.id === id) {
+      return res.status(400).json({ ok: false, message: "미분류는 삭제할 수 없습니다." });
+    }
+
+    await prisma.item.updateMany({
+      where: { userId: req.userId, categoryId: id },
+      data: { categoryId: uncategorized.id },
+    });
+
+    await prisma.category.delete({ where: { id } });
+
+    res.status(204).end();
+  })
+);
+
 // ================== ITEMS ==================
 
-// GET /api/items?category=SHOE|FOOD
+// GET /api/items?categoryId=123
 app.get(
   "/api/items",
   requireAuth,
   asyncHandler(async (req, res) => {
-    const { category } = req.query; // "SHOE" | "FOOD" | undefined
+    const categoryIdRaw = req.query.categoryId;
+    const categoryId = categoryIdRaw ? Number(categoryIdRaw) : null;
 
     const where = { userId: req.userId };
-
-    // category가 유효할 때만 필터 적용
-    if (category === "SHOE" || category === "FOOD") {
-      where.category = category;
+    if (categoryId && Number.isFinite(categoryId)) {
+      where.categoryId = categoryId;
     }
 
     const items = await prisma.item.findMany({
@@ -202,26 +337,38 @@ app.get(
   })
 );
 
-
-// POST /api/items (barcode 포함)
+// POST /api/items (barcode 포함) body: { name, size, categoryId, imageUrl?, barcode? }
 app.post(
   "/api/items",
   requireAuth,
   asyncHandler(async (req, res) => {
-    const { name, size, category, imageUrl, barcode } = req.body;
+    const { name, size, categoryId, imageUrl, barcode } = req.body;
 
     const n = String(name ?? "").trim();
     const s = String(size ?? "").trim();
+    const cid = Number(categoryId);
+
     const bc =
       barcode && String(barcode).trim() !== ""
         ? String(barcode).trim()
         : null;
 
-    if (!n || !s) return res.status(400).json({ ok: false });
+    if (!n || !s) return res.status(400).json({ ok: false, message: "name/size required" });
+    if (!Number.isFinite(cid) || cid <= 0) {
+      return res.status(400).json({ ok: false, message: "categoryId required" });
+    }
+
+    // 내 카테고리인지 검증
+    const cat = await prisma.category.findFirst({
+      where: { id: cid, userId: req.userId },
+      select: { id: true },
+    });
+    if (!cat) return res.status(400).json({ ok: false, message: "invalid categoryId" });
 
     if (bc) {
       const exists = await prisma.item.findFirst({
         where: { userId: req.userId, barcode: bc },
+        select: { id: true },
       });
       if (exists) {
         return res
@@ -235,7 +382,7 @@ app.post(
         userId: req.userId,
         name: n,
         size: s,
-        category,
+        categoryId: cid,
         imageUrl: imageUrl || null,
         barcode: bc,
       },
@@ -260,7 +407,7 @@ app.put(
     });
     if (!existing) return res.status(404).json({ ok: false });
 
-    const { name, size, imageUrl, memo, category, barcode } = req.body;
+    const { name, size, imageUrl, memo, categoryId, barcode } = req.body;
 
     // barcode 중복 체크(입력값이 있을 때만)
     const bc =
@@ -282,6 +429,25 @@ app.put(
       }
     }
 
+    // categoryId 유효성 체크(들어온 경우)
+    let nextCategoryId = undefined;
+    if (categoryId !== undefined) {
+      const cid = Number(categoryId);
+      if (!Number.isFinite(cid) || cid <= 0) {
+        return res.status(400).json({ ok: false, message: "categoryId가 잘못되었습니다." });
+      }
+
+      const cat = await prisma.category.findFirst({
+        where: { id: cid, userId: req.userId },
+        select: { id: true },
+      });
+      if (!cat) {
+        return res.status(400).json({ ok: false, message: "invalid categoryId" });
+      }
+
+      nextCategoryId = cid;
+    }
+
     const updated = await prisma.item.update({
       where: { id },
       data: {
@@ -289,7 +455,7 @@ app.put(
         ...(size !== undefined ? { size } : {}),
         ...(imageUrl !== undefined ? { imageUrl } : {}),
         ...(memo !== undefined ? { memo } : {}),
-        ...(category !== undefined ? { category } : {}),
+        ...(nextCategoryId !== undefined ? { categoryId: nextCategoryId } : {}),
         ...(bc !== undefined ? { barcode: bc } : {}),
       },
     });
@@ -332,6 +498,7 @@ app.get(
 
     const item = await prisma.item.findFirst({
       where: { userId: req.userId, barcode },
+      select: { id: true, name: true, size: true, imageUrl: true, barcode: true, categoryId: true },
     });
 
     if (!item) return res.json({ ok: false, message: "NOT_FOUND" });
@@ -344,7 +511,7 @@ app.get(
         size: item.size,
         imageUrl: item.imageUrl,
         barcode: item.barcode,
-        category: item.category,
+        categoryId: item.categoryId,
       },
     });
   })
@@ -364,9 +531,6 @@ async function calcStock(userId, itemId) {
 
 /**
  *  디테일 페이지용: GET /api/items/:itemId/records (v2)
- * - 기존: item 조회 1번 + records 조회 1번 + stock groupBy 1번 (총 3번 DB 왕복)
- * - 개선: item + records를 1번에 가져오고, stock은 JS로 계산 (DB 왕복 1번)
- * - 그리고 timing 로그는 그대로 남김
  */
 app.get(
   "/api/items/:itemId/records",
@@ -379,7 +543,6 @@ app.get(
       return res.status(400).json({ ok: false, message: "itemId가 잘못되었습니다." });
     }
 
-    //  item + records를 한 번에
     const t1 = Date.now();
     const itemWithRecords = await prisma.item.findFirst({
       where: { id: itemId, userId: req.userId },
@@ -388,6 +551,7 @@ app.get(
         name: true,
         size: true,
         imageUrl: true,
+        categoryId: true,
         records: {
           where: { userId: req.userId },
           orderBy: [{ date: "asc" }, { id: "asc" }],
@@ -408,7 +572,6 @@ app.get(
       return res.status(404).json({ ok: false, message: "item not found" });
     }
 
-    //  stock은 JS에서 계산 (DB 왕복 제거)
     const t3 = Date.now();
     let stock = 0;
     for (const r of itemWithRecords.records) {
@@ -423,6 +586,7 @@ app.get(
         name: itemWithRecords.name,
         size: itemWithRecords.size,
         imageUrl: itemWithRecords.imageUrl,
+        categoryId: itemWithRecords.categoryId,
       },
       records: itemWithRecords.records,
       stock,
@@ -444,7 +608,7 @@ app.get(
   })
 );
 
-//  디테일/단건 추가: POST /api/items/:itemId/records
+// 디테일/단건 추가: POST /api/items/:itemId/records
 app.post(
   "/api/items/:itemId/records",
   requireAuth,
@@ -507,7 +671,7 @@ app.post(
   })
 );
 
-//  기록 수정: PUT /api/items/:itemId/records
+// 기록 수정: PUT /api/items/:itemId/records
 app.put(
   "/api/items/:itemId/records",
   requireAuth,
@@ -578,7 +742,7 @@ app.put(
   })
 );
 
-//  기록 삭제: DELETE /api/items/:itemId/records?id=123
+// 기록 삭제: DELETE /api/items/:itemId/records?id=123
 app.delete(
   "/api/items/:itemId/records",
   requireAuth,
@@ -605,7 +769,7 @@ app.delete(
   })
 );
 
-//  입/출고 페이지용 전체 기록 조회: GET /api/records
+// 입/출고 페이지용 전체 기록 조회: GET /api/records
 app.get(
   "/api/records",
   requireAuth,
@@ -629,7 +793,7 @@ app.get(
   })
 );
 
-//  배치 입고/출고: POST /api/records/batch
+// 배치 입고/출고: POST /api/records/batch
 app.post(
   "/api/records/batch",
   requireAuth,

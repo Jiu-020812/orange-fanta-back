@@ -7,14 +7,9 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-enum ItemCategory {
-  SHOE
-  FOOD
-}
-
 enum RecordType {
-  IN   // 매입
-  OUT  // 출고(판매/출고)
+  IN
+  OUT
 }
 
 model User {
@@ -25,64 +20,65 @@ model User {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  // 관계
-  items   Item[]
-  records Record[]
+  categories Category[]
+  items      Item[]
+  records    Record[]
+}
+
+model Category {
+  id        Int      @id @default(autoincrement())
+  name      String
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+
+  userId Int
+  user   User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  items Item[]
+
+  @@unique([userId, name])
+  @@index([userId, sortOrder])
 }
 
 model Item {
-  id        Int          @id @default(autoincrement())
+  id       Int     @id @default(autoincrement())
+  name     String
+  size     String
+  imageUrl String?
 
-  name      String
-  size      String
-  imageUrl  String?
-  category  ItemCategory @default(SHOE)
+  legacyId String?
+  memo     String?
+  barcode  String?
 
-  //  IndexedDB 로컬 id (마이그레이션용)
-  legacyId  String?
+  createdAt DateTime @default(now())
 
-  createdAt DateTime     @default(now())
-  memo      String?
-
-  //  바코드
-  barcode   String?
-
-
-  // FK
   userId Int
-  user   User   @relation(fields: [userId], references: [id])
+  user   User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  // 관계 (Record 쪽과 1:N)
+  categoryId Int
+  category   Category @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+
   records Record[]
 
-  // 같은 유저의 같은 카테고리에서 legacyId로 정확히 매칭
-  @@unique([userId, category, legacyId])
-
-  //  같은 유저 안에서 바코드는 유니크
+  @@unique([userId, categoryId, legacyId])
   @@unique([userId, barcode])
+  @@index([userId, categoryId])
 }
 
 model Record {
-  id    Int        @id @default(autoincrement())
+  id Int @id @default(autoincrement())
 
-  // 추가: 매입/출고 구분
   type  RecordType @default(IN)
-
-  // 기존 그대로 사용:
-  // IN  -> 매입 단가
-  // OUT -> 판매 단가(출고 단가)
   price Int?
-
   count Int        @default(1)
   date  DateTime
-
-  // (선택) 출고 메모/판매처 등
   memo  String?
 
-  // FK
   userId Int
-  user   User @relation(fields: [userId], references: [id])
+  user   User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   itemId Int
-  item   Item @relation(fields: [itemId], references: [id])
+  item   Item @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  @@index([userId, itemId, date])
 }
