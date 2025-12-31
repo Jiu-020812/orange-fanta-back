@@ -179,18 +179,29 @@ app.get(
 
 // ================== ITEMS ==================
 
-// GET /api/items
+// GET /api/items?category=SHOE|FOOD
 app.get(
   "/api/items",
   requireAuth,
   asyncHandler(async (req, res) => {
+    const { category } = req.query; // "SHOE" | "FOOD" | undefined
+
+    const where = { userId: req.userId };
+
+    // category가 유효할 때만 필터 적용
+    if (category === "SHOE" || category === "FOOD") {
+      where.category = category;
+    }
+
     const items = await prisma.item.findMany({
-      where: { userId: req.userId },
+      where,
       orderBy: [{ createdAt: "asc" }, { id: "asc" }],
     });
+
     res.json(items);
   })
 );
+
 
 // POST /api/items (barcode 포함)
 app.post(
@@ -352,7 +363,7 @@ async function calcStock(userId, itemId) {
 }
 
 /**
- * ✅ 디테일 페이지용: GET /api/items/:itemId/records (v2)
+ *  디테일 페이지용: GET /api/items/:itemId/records (v2)
  * - 기존: item 조회 1번 + records 조회 1번 + stock groupBy 1번 (총 3번 DB 왕복)
  * - 개선: item + records를 1번에 가져오고, stock은 JS로 계산 (DB 왕복 1번)
  * - 그리고 timing 로그는 그대로 남김
@@ -368,7 +379,7 @@ app.get(
       return res.status(400).json({ ok: false, message: "itemId가 잘못되었습니다." });
     }
 
-    // ✅ item + records를 한 번에
+    //  item + records를 한 번에
     const t1 = Date.now();
     const itemWithRecords = await prisma.item.findFirst({
       where: { id: itemId, userId: req.userId },
@@ -397,7 +408,7 @@ app.get(
       return res.status(404).json({ ok: false, message: "item not found" });
     }
 
-    // ✅ stock은 JS에서 계산 (DB 왕복 제거)
+    //  stock은 JS에서 계산 (DB 왕복 제거)
     const t3 = Date.now();
     let stock = 0;
     for (const r of itemWithRecords.records) {
