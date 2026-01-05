@@ -647,7 +647,7 @@ app.post(
       if (numericCount > stockNow) {
         return res.status(400).json({
           ok: false,
-          message: `재고 부족: 현재 재고(${stockNow})보다 많이 출고할 수 없습니다.`,
+          message: `재고 부족: 현재 재고(${stockNow})보다 많이 판매할 수 없습니다.`,
           stock: stockNow,
         });
       }
@@ -719,7 +719,7 @@ app.put(
       if (nextCount > stockExcludingThis) {
         return res.status(400).json({
           ok: false,
-          message: `재고 부족: 현재 재고(${stockExcludingThis})보다 많이 출고할 수 없습니다.`,
+          message: `재고 부족: 현재 재고(${stockExcludingThis})보다 많이 판매할 수 없습니다.`,
           stock: stockExcludingThis,
         });
       }

@@ -124,7 +124,7 @@ export default async function handler(req, res) {
           itemId: numericItemId,
           //  schema에 userId가 "필수"면 여기서 userId 없으면 에러가 날 거야.
           ...(userId ? { userId } : {}),
-          type: recordType,                 // 출고 핵심
+          type: recordType,                 // 판매 핵심
           memo: memo ? String(memo) : null,  // 메모
           price: Number(price),
           count: numericCount,
