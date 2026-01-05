@@ -801,6 +801,12 @@ app.post(
     const { type, items } = req.body;
     const recordType = normType(type);
 
+    if (recordType !== "IN" && recordType !== "OUT") {
+      return res
+        .status(400)
+        .json({ ok: false, message: "batch는 IN/OUT만 가능합니다." });
+    }
+
     if (!Array.isArray(items) || items.length === 0) {
       return res.status(400).json({ ok: false });
     }
@@ -811,6 +817,8 @@ app.post(
         itemId: Number(x.itemId),
         type: recordType,
         count: Number(x.count),
+        price: null, 
+        memo: null, // schema에 memo 있으면 주석 해제
         date: new Date(),
       }))
       .filter((x) => x.itemId > 0 && x.count > 0);
@@ -828,6 +836,7 @@ app.post(
     res.json({ ok: true, inserted: data.length });
   })
 );
+
 
 // ================== ERROR ==================
 app.use((err, req, res, next) => {
