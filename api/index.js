@@ -87,6 +87,131 @@ app.use("/api/migrate/items-batch", itemsBatchHandler);
 app.use("/api/migrate/records-batch", recordsBatchHandler);
 
 /* ================= AUTH ================= */
+
+/* ================= AUTH API ================= */
+
+// POST /api/auth/signup
+app.post(
+  "/api/auth/signup",
+  asyncHandler(async (req, res) => {
+    const { email, password, name } = req.body;
+
+    if (!email || !password) {
+      return res.status(400).json({ ok: false, message: "email/password required" });
+    }
+
+    const exists = await prisma.user.findUnique({
+      where: { email },
+    });
+    if (exists) {
+      return res.status(409).json({ ok: false, message: "이미 존재하는 이메일입니다." });
+    }
+
+    const hashed = await bcrypt.hash(password, 10);
+
+    const user = await prisma.user.create({
+      data: {
+        email,
+        password: hashed,
+        name: name || null,
+      },
+    });
+
+    const token = createToken(user.id);
+
+    res
+      .cookie("token", token, {
+        httpOnly: true,
+        secure: true,     
+        sameSite: "none",  
+        path: "/",
+      })
+      .status(201)
+      .json({
+        ok: true,
+        user: {
+          id: user.id,
+          email: user.email,
+          name: user.name,
+        },
+      });
+  })
+);
+
+// POST /api/auth/login
+app.post(
+  "/api/auth/login",
+  asyncHandler(async (req, res) => {
+    const { email, password } = req.body;
+
+    if (!email || !password) {
+      return res.status(400).json({ ok: false });
+    }
+
+    const user = await prisma.user.findUnique({
+      where: { email },
+    });
+    if (!user) {
+      return res.status(401).json({ ok: false, message: "이메일 또는 비밀번호 오류" });
+    }
+
+    const ok = await bcrypt.compare(password, user.password);
+    if (!ok) {
+      return res.status(401).json({ ok: false, message: "이메일 또는 비밀번호 오류" });
+    }
+
+    const token = createToken(user.id);
+
+    res
+      .cookie("token", token, {
+        httpOnly: true,
+        secure: true,
+        sameSite: "none",
+        path: "/",
+      })
+      .json({
+        ok: true,
+        user: {
+          id: user.id,
+          email: user.email,
+          name: user.name,
+        },
+      });
+  })
+);
+
+// POST /api/auth/logout
+app.post("/api/auth/logout", (req, res) => {
+  res.clearCookie("token", {
+    path: "/",
+    secure: true,
+    sameSite: "none",
+  });
+  res.json({ ok: true });
+});
+
+// GET /api/auth/me
+app.get(
+  "/api/auth/me",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const user = await prisma.user.findUnique({
+      where: { id: req.userId },
+      select: {
+        id: true,
+        email: true,
+        name: true,
+      },
+    });
+
+    if (!user) {
+      return res.status(404).json({ ok: false });
+    }
+
+    res.json({ ok: true, user });
+  })
+);
+
 function createToken(userId) {
   return jwt.sign({ userId }, JWT_SECRET, { expiresIn: "7d" });
 }
