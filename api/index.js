@@ -43,8 +43,7 @@ function normalizeRecordInput(body) {
   const count = Math.max(1, Math.abs(Number.isFinite(countNum) ? countNum : 1));
 
   const rawPrice = body?.price;
-  const price =
-    rawPrice === "" || rawPrice == null ? null : Number(rawPrice);
+  const price = rawPrice === "" || rawPrice == null ? null : Number(rawPrice);
 
   if (type === "IN") {
     return { type, count, price: null };
@@ -61,6 +60,15 @@ function normalizeRecordInput(body) {
   if (price === null) return { type, count, price: null };
   if (!Number.isFinite(price) || price < 0) throw new Error("Invalid price");
   return { type, count, price: Math.floor(price) };
+}
+
+function toYmd(v) {
+  if (!v) return null;
+  const s = String(v);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+  if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
+  const d = new Date(v);
+  return Number.isNaN(d.getTime()) ? null : d.toISOString().slice(0, 10);
 }
 
 /* ================= CORS ================= */
@@ -430,10 +438,7 @@ app.post(
     const s = String(size ?? "").trim();
     const cid = Number(categoryId);
 
-    const bc =
-      barcode && String(barcode).trim() !== ""
-        ? String(barcode).trim()
-        : null;
+    const bc = barcode && String(barcode).trim() !== "" ? String(barcode).trim() : null;
 
     if (!n || !s) {
       return res.status(400).json({ ok: false, message: "name/size required" });
@@ -495,7 +500,7 @@ app.put(
 
     const { name, size, imageUrl, memo, categoryId, barcode } = req.body;
 
-    // barcode 정리: undefined=수정안함, null=삭제, string=설정
+    // barcode 정리
     const bc =
       barcode === undefined
         ? undefined
@@ -571,6 +576,7 @@ app.delete(
 /* ================= RECORD CALC ================= */
 // stock = IN - OUT (PURCHASE는 재고에 반영 X)
 // pendingIn = max(0, PURCHASE - IN)
+//  (purchaseId 여부는 여기선 상관없음. pendingIn은 "매입 대비 입고" 개념)
 const calcStockAndPending = (records) => {
   let stock = 0;
   let inSum = 0;
@@ -607,6 +613,106 @@ async function calcStock(userId, itemId) {
   return inSum - outSum;
 }
 
+/* ================= PURCHASE ARRIVE ================= */
+/**
+ *  구매(PURCHASE) 기준 "입고 처리" API
+ *
+ * POST /api/purchases/:purchaseId/arrive
+ * body: { count?: number, date?: "YYYY-MM-DD", memo?: string }
+ *
+ * - count 없으면: 남은 수량 전부(=일괄입고)
+ * - count 있으면: 그만큼만(=부분입고)
+ * - IN record 생성(type=IN, price=null, purchaseId=해당 구매 id)
+ */
+app.post(
+  "/api/purchases/:purchaseId/arrive",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const purchaseId = Number(req.params.purchaseId);
+    if (!Number.isFinite(purchaseId) || purchaseId <= 0) {
+      return res.status(400).json({ ok: false, message: "invalid purchaseId" });
+    }
+
+    const purchase = await prisma.record.findFirst({
+      where: { id: purchaseId, userId: req.userId },
+      select: { id: true, type: true, itemId: true, count: true, date: true },
+    });
+    if (!purchase) return res.status(404).json({ ok: false, message: "purchase not found" });
+    if (String(purchase.type).toUpperCase() !== "PURCHASE") {
+      return res.status(400).json({ ok: false, message: "record is not PURCHASE" });
+    }
+
+    // 이미 이 PURCHASE로 입고된 수량 합
+    const arrived = await prisma.record.aggregate({
+      where: { userId: req.userId, itemId: purchase.itemId, type: "IN", purchaseId },
+      _sum: { count: true },
+    });
+    const arrivedSum = arrived?._sum?.count ?? 0;
+    const remaining = Math.max(0, (purchase.count ?? 0) - arrivedSum);
+
+    if (remaining <= 0) {
+      return res.json({ ok: true, message: "already fully arrived", remaining: 0 });
+    }
+
+    const reqCountRaw = req.body?.count;
+    const reqCountNum =
+      reqCountRaw === "" || reqCountRaw == null ? null : Number(reqCountRaw);
+
+    const count =
+      reqCountNum == null
+        ? remaining // 일괄입고
+        : Math.max(1, Math.min(remaining, Math.floor(reqCountNum))); // 부분입고
+
+    const dateStr = req.body?.date;
+    const dateOnly = toYmd(dateStr) || toYmd(new Date());
+    const date = new Date(dateOnly + "T00:00:00");
+
+    const memo =
+      req.body?.memo != null && String(req.body.memo).trim() !== ""
+        ? String(req.body.memo)
+        : null;
+
+    const createdIn = await prisma.record.create({
+      data: {
+        userId: req.userId,
+        itemId: purchase.itemId,
+        type: "IN",
+        price: null,
+        count,
+        date,
+        memo,
+        purchaseId, 
+      },
+      select: { id: true, itemId: true, type: true, price: true, count: true, date: true, memo: true, purchaseId: true },
+    });
+
+    // 디테일 다시 계산해서 돌려줌(프론트 편하게)
+    const detail = await prisma.record.findMany({
+      where: { userId: req.userId, itemId: purchase.itemId },
+      orderBy: [{ date: "asc" }, { id: "asc" }],
+      select: { id: true, itemId: true, type: true, price: true, count: true, date: true, memo: true, purchaseId: true },
+    });
+
+    const { stock, pendingIn } = calcStockAndPending(detail);
+
+    const arrived2 = await prisma.record.aggregate({
+      where: { userId: req.userId, itemId: purchase.itemId, type: "IN", purchaseId },
+      _sum: { count: true },
+    });
+    const arrivedSum2 = arrived2?._sum?.count ?? 0;
+    const remaining2 = Math.max(0, (purchase.count ?? 0) - arrivedSum2);
+
+    res.status(201).json({
+      ok: true,
+      inRecord: createdIn,
+      remaining: remaining2, 
+      stock,
+      pendingIn,
+      records: detail,
+    });
+  })
+);
+
 /* ================= DETAIL (디테일 페이지) ================= */
 // GET /api/items/:itemId/records
 app.get(
@@ -629,7 +735,16 @@ app.get(
         records: {
           where: { userId: req.userId },
           orderBy: [{ date: "asc" }, { id: "asc" }],
-          select: { id: true, itemId: true, type: true, price: true, count: true, date: true, memo: true },
+          select: {
+            id: true,
+            itemId: true,
+            type: true,
+            price: true,
+            count: true,
+            date: true,
+            memo: true,
+            purchaseId: true, 
+          },
         },
       },
     });
@@ -692,6 +807,8 @@ app.post(
 
     const { date, memo } = req.body;
 
+    //  일반 create로 IN을 만들 때 purchaseId는 받지 않음(실수 방지)
+    // 입고처리는 /api/purchases/:purchaseId/arrive 로만 처리하는게 안전
     const created = await prisma.record.create({
       data: {
         userId: req.userId,
@@ -701,18 +818,19 @@ app.post(
         count: normalized.count,
         date: date ? new Date(date) : new Date(),
         memo: memo != null && String(memo).trim() !== "" ? String(memo) : null,
+        purchaseId: null,
       },
-      select: { id: true, itemId: true, type: true, price: true, count: true, date: true, memo: true },
+      select: { id: true, itemId: true, type: true, price: true, count: true, date: true, memo: true, purchaseId: true },
     });
 
     const detail = await prisma.record.findMany({
       where: { userId: req.userId, itemId },
       orderBy: [{ date: "asc" }, { id: "asc" }],
-      select: { id: true, itemId: true, type: true, price: true, count: true, date: true, memo: true },
+      select: { id: true, itemId: true, type: true, price: true, count: true, date: true, memo: true, purchaseId: true },
     });
 
     const { stock, pendingIn } = calcStockAndPending(detail);
-    res.status(201).json({ ok: true, record: created, stock, pendingIn });
+    res.status(201).json({ ok: true, record: created, stock, pendingIn, records: detail });
   })
 );
 
@@ -733,7 +851,7 @@ app.put(
 
     const existing = await prisma.record.findFirst({
       where: { id, itemId, userId: req.userId },
-      select: { id: true, type: true, count: true, price: true, date: true, memo: true },
+      select: { id: true, type: true, count: true, price: true, date: true, memo: true, purchaseId: true },
     });
     if (!existing) return res.status(404).json({ ok: false, message: "record not found" });
 
@@ -750,11 +868,11 @@ app.put(
       return res.status(400).json({ ok: false, message: String(e?.message || e) });
     }
 
-    // OUT 업데이트 재고 체크(자기 자신 제외한 stock 계산 필요)
+    // OUT 업데이트 재고 체크
     if (normalized.type === "OUT") {
       const stockNow = await calcStock(req.userId, itemId);
       const stockExcludingThis =
-        existing.type === "OUT" ? stockNow + existing.count : stockNow;
+        String(existing.type).toUpperCase() === "OUT" ? stockNow + existing.count : stockNow;
 
       if (normalized.count > stockExcludingThis) {
         return res.status(400).json({
@@ -764,6 +882,8 @@ app.put(
         });
       }
     }
+
+    const nextPurchaseId = existing.purchaseId;
 
     const { date, memo } = req.body;
 
@@ -775,18 +895,19 @@ app.put(
         price: normalized.price,
         ...(date ? { date: new Date(date) } : {}),
         ...(memo !== undefined ? { memo: memo ? String(memo) : null } : {}),
+        purchaseId: nextPurchaseId,
       },
-      select: { id: true, itemId: true, type: true, price: true, count: true, date: true, memo: true },
+      select: { id: true, itemId: true, type: true, price: true, count: true, date: true, memo: true, purchaseId: true },
     });
 
     const detail = await prisma.record.findMany({
       where: { userId: req.userId, itemId },
       orderBy: [{ date: "asc" }, { id: "asc" }],
-      select: { id: true, itemId: true, type: true, price: true, count: true, date: true, memo: true },
+      select: { id: true, itemId: true, type: true, price: true, count: true, date: true, memo: true, purchaseId: true },
     });
 
     const { stock, pendingIn } = calcStockAndPending(detail);
-    res.json({ ok: true, record: updated, stock, pendingIn });
+    res.json({ ok: true, record: updated, stock, pendingIn, records: detail });
   })
 );
 
@@ -816,11 +937,11 @@ app.delete(
     const detail = await prisma.record.findMany({
       where: { userId: req.userId, itemId },
       orderBy: [{ date: "asc" }, { id: "asc" }],
-      select: { id: true, itemId: true, type: true, price: true, count: true, date: true, memo: true },
+      select: { id: true, itemId: true, type: true, price: true, count: true, date: true, memo: true, purchaseId: true },
     });
 
     const { stock, pendingIn } = calcStockAndPending(detail);
-    res.json({ ok: true, stock, pendingIn });
+    res.json({ ok: true, stock, pendingIn, records: detail });
   })
 );
 
