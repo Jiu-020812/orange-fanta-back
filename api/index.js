@@ -2,7 +2,7 @@ import express from "express";
 import cookieParser from "cookie-parser";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
-import { PrismaClient } from "@prisma/client";
+import { prisma } from "../lib/prisma.js";
 
 import itemsBatchHandler from "./migrate/items-batch.js";
 import recordsBatchHandler from "./migrate/records-batch.js";
