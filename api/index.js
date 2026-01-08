@@ -9,7 +9,6 @@ import recordsBatchHandler from "./migrate/records-batch.js";
 import meRouter from "../routes/me.js";
 
 const app = express();
-const prisma = new PrismaClient();
 
 /* ================= ENV ================= */
 const JWT_SECRET = process.env.JWT_SECRET || "dev-secret-key";
