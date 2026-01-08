@@ -67,19 +67,24 @@ model Item {
 }
 
 model Record {
-  id Int @id @default(autoincrement())
+  id        Int @id @default(autoincrement())
+  type      RecordType
+  price     Int?
+  count     Int @default(1)
+  date      DateTime
+  memo      String?
 
-  type  RecordType
-  price Int?
-  count Int        @default(1)
-  date  DateTime
-  memo  String?
+  purchaseId Int?    
+  purchase   Record?   @relation("PurchaseToIn", fields: [purchaseId], references: [id], onDelete: SetNull)
+  arrivals   Record[]  @relation("PurchaseToIn") 
 
-  userId Int
-  user   User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId    Int
+  user      User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  itemId Int
-  item   Item @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  itemId    Int
+  item      Item @relation(fields: [itemId], references: [id], onDelete: Cascade)
 
   @@index([userId, itemId, date])
+  @@index([purchaseId])
 }
+
