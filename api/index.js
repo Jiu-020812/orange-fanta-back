@@ -406,7 +406,11 @@ app.post(
       },
     });
 
-    const resetLink = `${APP_ORIGIN}/reset-password?token=${token}`;
+    const APP_ORIGIN =
+    process.env.APP_ORIGIN || process.env.FRONTEND_URL;
+  
+  const resetUrl = `${APP_ORIGIN}/reset-password?token=${token}`;
+  
 
     // 이메일 발송
     await resend.emails.send({
