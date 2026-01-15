@@ -189,8 +189,12 @@ app.post(
       },
     });
 
-    const apiOrigin = process.env.API_ORIGIN;
-    const link = `${apiOrigin}/api/auth/verify?token=${rawToken}`;
+    const apiOrigin =
+    process.env.API_ORIGIN || `https://${req.headers.host}`; // 안전장치
+
+   const link = `${apiOrigin}/api/auth/verify?token=${rawToken}`;
+   console.log("[VERIFY LINK]", link);
+
     console.log("[VERIFY LINK]", link);
 
     return res.status(201).json({
