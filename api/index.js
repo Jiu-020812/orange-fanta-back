@@ -264,8 +264,6 @@ app.get(
       prisma.emailVerifyToken.delete({ where: { tokenHash } }),
     ]);
 
-    // 1) 그냥 텍스트로 끝내도 되고
-    // return res.send("Email verified! You can login now.");
 
     // 2) 프론트 로그인 페이지로 보내고 싶으면 redirect
     const appOrigin = process.env.APP_ORIGIN || "http://localhost:5173";
@@ -333,6 +331,41 @@ app.get(
     });
     if (!user) return res.status(404).json({ ok: false });
     res.json({ ok: true, user });
+  })
+);
+// POST /api/auth/resend-verify
+app.post(
+  "/api/auth/resend-verify",
+  asyncHandler(async (req, res) => {
+    const email = String(req.body?.email ?? "").trim();
+    if (!email) return res.status(400).json({ ok: false, message: "email required" });
+
+    // 보안상: 존재 여부/인증 여부를 자세히 말하지 않고 ok로 통일(선택)
+    const user = await prisma.user.findUnique({
+      where: { email },
+      select: { id: true, email: true, emailVerified: true },
+    });
+    if (!user) return res.json({ ok: true });
+
+    if (user.emailVerified) return res.json({ ok: true });
+
+    // 기존 토큰 삭제 후 재발급
+    await prisma.emailVerifyToken.deleteMany({ where: { userId: user.id } });
+
+    const rawToken = makeRandomToken(32);
+    const tokenHash = sha256(rawToken);
+    const expiresAt = addHours(new Date(), 24);
+
+    await prisma.emailVerifyToken.create({
+      data: { userId: user.id, tokenHash, expiresAt },
+    });
+
+    const apiOrigin = process.env.API_ORIGIN || `https://${req.headers.host}`;
+    const link = `${apiOrigin}/api/auth/verify?token=${rawToken}`;
+
+    await sendVerifyEmail({ to: user.email, link });
+
+    res.json({ ok: true });
   })
 );
 
@@ -1074,6 +1107,42 @@ app.get(
     });
 
     res.json({ ok: true, records });
+  })
+);
+
+/* =================회원탈퇴================= */
+app.delete(
+  "/api/me",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const userId = req.userId;
+    const password = String(req.body?.password ?? "");
+
+    if (!password) {
+      return res.status(400).json({ ok: false, message: "password required" });
+    }
+
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true, password: true },
+    });
+
+    if (!user) return res.status(404).json({ ok: false, message: "user not found" });
+
+    const ok = await bcrypt.compare(password, user.password);
+    if (!ok) {
+      return res.status(401).json({ ok: false, message: "비밀번호가 올바르지 않습니다." });
+    }
+
+    await prisma.$transaction(async (tx) => {
+      await tx.record.deleteMany({ where: { userId } });
+      await tx.item.deleteMany({ where: { userId } });
+      await tx.category.deleteMany({ where: { userId } });
+      await tx.user.delete({ where: { id: userId } });
+    });
+
+    res.clearCookie("token", { path: "/", secure: true, sameSite: "none" });
+    res.json({ ok: true });
   })
 );
 
