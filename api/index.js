@@ -422,7 +422,7 @@ app.post(
           <h2>비밀번호 재설정</h2>
           <p>아래 버튼을 눌러 새 비밀번호를 설정해 주세요.</p>
           <p>
-            <a href="${resetLink}" style="display:inline-block;padding:10px 14px;background:#111827;color:white;border-radius:10px;text-decoration:none">
+            <a href="${resetUrl}" style="display:inline-block;padding:10px 14px;background:#111827;color:white;border-radius:10px;text-decoration:none">
               비밀번호 재설정하기
             </a>
           </p>
