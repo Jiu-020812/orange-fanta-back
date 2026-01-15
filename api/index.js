@@ -4,6 +4,7 @@ import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import { prisma } from "../lib/prisma.js";
 import crypto from "crypto";
+import { Resend } from "resend";
 
 import itemsBatchHandler from "./migrate/items-batch.js";
 import recordsBatchHandler from "./migrate/records-batch.js";
@@ -113,6 +114,42 @@ function addHours(date, hours) {
   return d;
 }
 
+
+const resend = process.env.RESEND_API_KEY
+  ? new Resend(process.env.RESEND_API_KEY)
+  : null;
+
+async function sendVerifyEmail({ to, link }) {
+  if (!resend) {
+    console.log("[MAIL SKIP] RESEND_API_KEY missing. Link:", link);
+    return;
+  }
+
+  const from = process.env.MAIL_FROM || "onboarding@resend.dev";
+
+  await resend.emails.send({
+    from,
+    to,
+    subject: "이메일 인증을 완료해 주세요",
+    html: `
+      <div style="font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;line-height:1.5">
+        <h2>이메일 인증</h2>
+        <p>아래 버튼을 눌러 이메일 인증을 완료해 주세요.</p>
+        <p>
+          <a href="${link}"
+             style="display:inline-block;padding:10px 14px;border-radius:10px;
+                    background:#111827;color:#fff;text-decoration:none">
+            이메일 인증하기
+          </a>
+        </p>
+        <p style="color:#6b7280;font-size:13px">
+          버튼이 안 되면 아래 링크를 복사해서 브라우저에 붙여넣어 주세요.<br/>
+          ${link}
+        </p>
+      </div>
+    `,
+  });
+}
 /* ================= AUTH ================= */
 const createToken = (userId) =>
   jwt.sign({ userId }, JWT_SECRET, { expiresIn: "7d" });
@@ -189,14 +226,11 @@ app.post(
       },
     });
 
-    const apiOrigin =
-    process.env.API_ORIGIN || `https://${req.headers.host}`; // 안전장치
+    const apiOrigin = process.env.API_ORIGIN || `https://${req.headers.host}`;
+    const link = `${apiOrigin}/api/auth/verify?token=${rawToken}`;
 
-   const link = `${apiOrigin}/api/auth/verify?token=${rawToken}`;
-   console.log("[VERIFY LINK]", link);
-
-    console.log("[VERIFY LINK]", link);
-
+    await sendVerifyEmail({ to: user.email, link });
+   console.log("[VERIFY SENT]", user.email);
     return res.status(201).json({
       ok: true,
       message: "회원가입 완료. 이메일 인증을 진행해주세요.",
