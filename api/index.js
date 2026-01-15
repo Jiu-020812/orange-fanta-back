@@ -3,6 +3,7 @@ import cookieParser from "cookie-parser";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import { prisma } from "../lib/prisma.js";
+import crypto from "crypto";
 
 import itemsBatchHandler from "./migrate/items-batch.js";
 import recordsBatchHandler from "./migrate/records-batch.js";
@@ -97,6 +98,21 @@ app.use((req, res, next) => {
 app.use(cookieParser());
 app.use(express.json({ limit: "20mb" }));
 
+/* ===================== 인증 유틸 ===================== */
+function makeRandomToken(bytes = 32) {
+  return crypto.randomBytes(bytes).toString("hex");
+}
+
+function sha256(input) {
+  return crypto.createHash("sha256").update(input).digest("hex");
+}
+
+function addHours(date, hours) {
+  const d = new Date(date);
+  d.setHours(d.getHours() + hours);
+  return d;
+}
+
 /* ================= AUTH ================= */
 const createToken = (userId) =>
   jwt.sign({ userId }, JWT_SECRET, { expiresIn: "7d" });
@@ -144,40 +160,81 @@ app.post(
     const n = String(name ?? "").trim();
 
     if (!e || !p) {
-      return res
-        .status(400)
-        .json({ ok: false, message: "email/password required" });
+      return res.status(400).json({ ok: false, message: "email/password required" });
+    }
+    if (p.length < 8) {
+      return res.status(400).json({ ok: false, message: "password must be at least 8 chars" });
     }
 
     const exists = await prisma.user.findUnique({ where: { email: e } });
     if (exists) {
-      return res
-        .status(409)
-        .json({ ok: false, message: "이미 존재하는 이메일입니다." });
+      return res.status(409).json({ ok: false, message: "이미 존재하는 이메일입니다." });
     }
 
     const hashed = await bcrypt.hash(p, 10);
 
     const user = await prisma.user.create({
       data: { email: e, password: hashed, name: n || null },
+      select: { id: true, email: true, name: true, emailVerified: true },
     });
 
-    const token = createToken(user.id);
+    const rawToken = makeRandomToken(32);
+    const tokenHash = sha256(rawToken);
 
-    res
-      .cookie("token", token, {
-        httpOnly: true,
-        secure: true,
-        sameSite: "none",
-        path: "/",
-      })
-      .status(201)
-      .json({
-        ok: true,
-        user: { id: user.id, email: user.email, name: user.name },
-      });
+    await prisma.emailVerifyToken.create({
+      data: {
+        userId: user.id,
+        tokenHash,
+        expiresAt: addHours(new Date(), 24),
+      },
+    });
+
+    const apiOrigin = process.env.API_ORIGIN;
+    const link = `${apiOrigin}/api/auth/verify?token=${rawToken}`;
+    console.log("[VERIFY LINK]", link);
+
+    return res.status(201).json({
+      ok: true,
+      message: "회원가입 완료. 이메일 인증을 진행해주세요.",
+      devVerifyLink: process.env.NODE_ENV !== "production" ? link : undefined,
+      user: { id: user.id, email: user.email, name: user.name, emailVerified: user.emailVerified },
+    });
   })
 );
+
+app.get(
+  "/api/auth/verify",
+  asyncHandler(async (req, res) => {
+    const token = String(req.query.token || "");
+    if (!token) return res.status(400).send("Missing token");
+
+    const tokenHash = sha256(token);
+
+    const row = await prisma.emailVerifyToken.findUnique({
+      where: { tokenHash },
+      select: { userId: true, expiresAt: true },
+    });
+
+    if (!row) return res.status(400).send("Invalid token");
+    if (row.expiresAt < new Date()) return res.status(400).send("Token expired");
+
+    await prisma.$transaction([
+      prisma.user.update({
+        where: { id: row.userId },
+        data: { emailVerified: true },
+      }),
+      prisma.emailVerifyToken.delete({ where: { tokenHash } }),
+    ]);
+
+    // 1) 그냥 텍스트로 끝내도 되고
+    // return res.send("Email verified! You can login now.");
+
+    // 2) 프론트 로그인 페이지로 보내고 싶으면 redirect
+    const appOrigin = process.env.APP_ORIGIN || "http://localhost:5173";
+    return res.redirect(`${appOrigin}/login?verified=1`);
+  })
+);
+
 
 app.post(
   "/api/auth/login",
@@ -201,6 +258,11 @@ app.post(
         .status(401)
         .json({ ok: false, message: "이메일 또는 비밀번호 오류" });
     }
+
+    if (!user.emailVerified) {
+      return res.status(403).json({ ok: false, message: "이메일 인증이 필요합니다." });
+    }
+    
 
     const token = createToken(user.id);
 
