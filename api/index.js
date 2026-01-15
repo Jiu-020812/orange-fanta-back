@@ -369,6 +369,128 @@ app.post(
   })
 );
 
+app.post(
+  "/api/auth/forgot-password",
+  asyncHandler(async (req, res) => {
+    const email = String(req.body?.email ?? "").trim();
+    if (!email) return res.status(400).json({ ok: false, message: "email required" });
+
+    // 보안: 존재 여부를 밖으로 드러내지 않기 위해 항상 ok 반환
+    const user = await prisma.user.findUnique({
+      where: { email },
+      select: { id: true, email: true, emailVerified: true },
+    });
+
+    if (!user) {
+      return res.json({ ok: true, message: "메일을 발송했습니다. (스팸함도 확인)" });
+    }
+
+    // 이메일 인증 안 한 계정은 재설정 자체를 막는 게 UX적으로 좋아
+    if (!user.emailVerified) {
+      return res.json({
+        ok: true,
+        message: "이메일 인증이 완료되지 않았습니다. 먼저 이메일 인증을 진행해 주세요.",
+      });
+    }
+
+    // 토큰 생성 & 해시 저장
+    const token = makeRandomToken(32);
+    const tokenHash = sha256(token);
+    const expiresAt = addHours(new Date(), 1);
+
+    await prisma.passwordResetToken.create({
+      data: {
+        userId: user.id,
+        tokenHash,
+        expiresAt,
+      },
+    });
+
+    const resetLink = `${APP_ORIGIN}/reset-password?token=${token}`;
+
+    // 이메일 발송
+    await resend.emails.send({
+      from: "Orange Fanta <onboarding@resend.dev>", // 도메인 인증 전이면 resend.dev 사용
+      to: user.email,
+      subject: "[Orange Fanta] 비밀번호 재설정 안내",
+      html: `
+        <div style="font-family: Arial, sans-serif; line-height:1.6">
+          <h2>비밀번호 재설정</h2>
+          <p>아래 버튼을 눌러 새 비밀번호를 설정해 주세요.</p>
+          <p>
+            <a href="${resetLink}" style="display:inline-block;padding:10px 14px;background:#111827;color:white;border-radius:10px;text-decoration:none">
+              비밀번호 재설정하기
+            </a>
+          </p>
+          <p style="color:#6b7280;font-size:13px">이 링크는 1시간 후 만료됩니다.</p>
+          <p style="color:#6b7280;font-size:13px">요청하지 않았다면 이 메일을 무시해 주세요.</p>
+        </div>
+      `,
+    });
+
+    console.log("[RESET SENT]", user.email);
+
+    res.json({ ok: true, message: "메일을 발송했습니다. (스팸함도 확인)" });
+  })
+);
+
+
+app.post(
+  "/api/auth/reset-password",
+  asyncHandler(async (req, res) => {
+    const token = String(req.body?.token ?? "").trim();
+    const newPassword = String(req.body?.newPassword ?? "");
+
+    if (!token || !newPassword) {
+      return res.status(400).json({ ok: false, message: "token/newPassword required" });
+    }
+
+    // 비번 정책은 프론트와 동일하게 맞추는 게 좋아
+    const PASSWORD_REGEX =
+      /^(?=.*\d)(?=.*[!@#$%^&*()[\]{};:'",.<>/?\\|`~+=_-]).{8,}$/;
+
+    if (!PASSWORD_REGEX.test(newPassword)) {
+      return res.status(400).json({
+        ok: false,
+        message: "비밀번호는 8자 이상이며 숫자와 특수문자를 포함해야 합니다.",
+      });
+    }
+
+    const tokenHash = sha256(token);
+
+    const row = await prisma.passwordResetToken.findUnique({
+      where: { tokenHash },
+      select: { id: true, userId: true, expiresAt: true, usedAt: true },
+    });
+
+    if (!row) {
+      return res.status(400).json({ ok: false, message: "유효하지 않은 링크입니다." });
+    }
+    if (row.usedAt) {
+      return res.status(400).json({ ok: false, message: "이미 사용된 링크입니다." });
+    }
+    if (new Date(row.expiresAt).getTime() < Date.now()) {
+      return res.status(400).json({ ok: false, message: "링크가 만료되었습니다." });
+    }
+
+    const hashed = await bcrypt.hash(newPassword, 10);
+
+    await prisma.$transaction([
+      prisma.user.update({
+        where: { id: row.userId },
+        data: { password: hashed },
+      }),
+      prisma.passwordResetToken.update({
+        where: { id: row.id },
+        data: { usedAt: new Date() },
+      }),
+    ]);
+
+    res.json({ ok: true, message: "비밀번호가 변경되었습니다. 로그인해 주세요." });
+  })
+);
+
+
 /* ================= CATEGORIES ================= */
 // GET /api/categories
 app.get(
