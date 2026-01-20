@@ -9,7 +9,7 @@ prisma = globalThis._prisma;
 
 // CORS 허용 도메인
 const ALLOWED_ORIGINS = [
-  "https://orange-fanta-one.vercel.app",
+  "https://myinvetory.com",
   "http://localhost:5173",
   "http://localhost:5175",
 ];

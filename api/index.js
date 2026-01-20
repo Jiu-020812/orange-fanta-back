@@ -16,7 +16,7 @@ const app = express();
 const JWT_SECRET = process.env.JWT_SECRET || "dev-secret-key";
 
 const allowedOrigins = [
-  "https://orange-fanta-one.vercel.app",
+  "https://myinvetory.com",
   "http://localhost:5173",
   "http://localhost:5175",
 ];
@@ -418,17 +418,30 @@ app.post(
       to: user.email,
       subject: "[Orange Fanta] 비밀번호 재설정 안내",
       html: `
-        <div style="font-family: Arial, sans-serif; line-height:1.6">
-          <h2>비밀번호 재설정</h2>
-          <p>아래 버튼을 눌러 새 비밀번호를 설정해 주세요.</p>
-          <p>
-            <a href="${resetUrl}" style="display:inline-block;padding:10px 14px;background:#111827;color:white;border-radius:10px;text-decoration:none">
-              비밀번호 재설정하기
-            </a>
-          </p>
-          <p style="color:#6b7280;font-size:13px">이 링크는 1시간 후 만료됩니다.</p>
-          <p style="color:#6b7280;font-size:13px">요청하지 않았다면 이 메일을 무시해 주세요.</p>
-        </div>
+         <div style="font-family:Apple SD Gothic Neo, Malgun Gothic, sans-serif; line-height:1.6">
+    <h2 style="margin:0 0 12px 0">비밀번호 재설정</h2>
+    <p>안녕하세요, Orange Fanta 입니다.</p>
+    <p>비밀번호 재설정 요청을 받았습니다. 아래 버튼을 눌러 새 비밀번호를 설정하세요.</p>
+
+    <p style="margin:18px 0">
+      <a href="${resetLink}"
+         style="display:inline-block;background:#111827;color:#fff;text-decoration:none;
+                padding:10px 14px;border-radius:10px;font-weight:700">
+        비밀번호 재설정하기
+      </a>
+    </p>
+
+    <p style="font-size:12px;color:#6b7280">
+      • 이 링크는 일정 시간 후 만료됩니다.<br/>
+      • 본인이 요청하지 않았다면 이 메일을 무시해도 됩니다.
+    </p>
+
+    <hr style="border:none;border-top:1px solid #e5e7eb;margin:18px 0"/>
+
+    <p style="font-size:12px;color:#9ca3af">
+      Orange Fanta · 자동발송 메일입니다.
+    </p>
+  </div>
       `,
     });
 
