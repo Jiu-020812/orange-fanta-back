@@ -369,34 +369,68 @@ app.post(
   })
 );
 
+/* ================= FORGOT PASSWORD =================
+ * POST /api/auth/forgot-password
+ * body: { email }
+ *
+ * - 보안: 이메일 존재 여부는 숨김(항상 ok:true 형태로 응답)
+ * - 이메일 인증 안 된 계정은 "인증 먼저" 안내(그래도 ok:true)
+ * - 토큰은 평문 저장 X (hash 저장)
+ * - 링크는 APP_ORIGIN 기반
+ * - 메일 발신자는 MAIL_FROM(도메인 인증 후) 우선, 없으면 onboarding@resend.dev(개발용)
+ */
 app.post(
   "/api/auth/forgot-password",
   asyncHandler(async (req, res) => {
-    const email = String(req.body?.email ?? "").trim();
-    if (!email) return res.status(400).json({ ok: false, message: "email required" });
+    const email = String(req.body?.email ?? "").trim().toLowerCase();
+    if (!email) {
+      return res.status(400).json({ ok: false, message: "email required" });
+    }
 
-    // 보안: 존재 여부를 밖으로 드러내지 않기 위해 항상 ok 반환
+    // 보안/UX: 항상 동일한 성공 응답 형태(존재 여부 숨김)
+    const okMsg = "메일을 발송했습니다. (스팸함도 확인)";
+
+    // 사용자 조회
     const user = await prisma.user.findUnique({
       where: { email },
       select: { id: true, email: true, emailVerified: true },
     });
 
+    // 사용자 없으면 그대로 ok
     if (!user) {
-      return res.json({ ok: true, message: "메일을 발송했습니다. (스팸함도 확인)" });
+      return res.json({ ok: true, message: okMsg });
     }
 
-    // 이메일 인증 안 한 계정은 재설정 자체를 막는 게 UX적으로 좋아
+    // 이메일 인증 안 됐으면: 재설정 자체를 막는 UX
+    // (그래도 존재 여부를 노출시키고 싶지 않다면 okMsg로 통일해도 됨)
     if (!user.emailVerified) {
       return res.json({
         ok: true,
-        message: "이메일 인증이 완료되지 않았습니다. 먼저 이메일 인증을 진행해 주세요.",
+        message:
+          "이메일 인증이 완료되지 않았습니다. 가입하신 이메일(스팸함 포함)에서 인증을 먼저 진행해 주세요.",
       });
     }
 
-    // 토큰 생성 & 해시 저장
+    // origin 준비 (마지막 / 제거)
+    const APP_ORIGIN_RAW = process.env.APP_ORIGIN || process.env.FRONTEND_URL || "";
+    const APP_ORIGIN = String(APP_ORIGIN_RAW).trim().replace(/\/+$/, "");
+    if (!APP_ORIGIN) {
+      // 서버 설정 문제이므로 500으로 알려주기
+      return res.status(500).json({
+        ok: false,
+        message: "Server misconfigured: APP_ORIGIN (or FRONTEND_URL) is not set",
+      });
+    }
+
+    // 토큰 생성(평문은 메일로만 보내고, DB에는 hash로 저장)
     const token = makeRandomToken(32);
     const tokenHash = sha256(token);
-    const expiresAt = addHours(new Date(), 1);
+    const expiresAt = addHours(new Date(), 1); // 1시간
+
+    // 같은 유저가 여러 번 요청하면 기존 토큰 정리(선택)
+    await prisma.passwordResetToken.deleteMany({
+      where: { userId: user.id },
+    });
 
     await prisma.passwordResetToken.create({
       data: {
@@ -406,48 +440,49 @@ app.post(
       },
     });
 
-    const APP_ORIGIN =
-    process.env.APP_ORIGIN || process.env.FRONTEND_URL;
-  
-  const resetUrl = `${APP_ORIGIN}/reset-password?token=${token}`;
-  
+    const resetLink = `${APP_ORIGIN}/reset-password?token=${encodeURIComponent(token)}`;
 
-    // 이메일 발송
+    // 발신자: 도메인 인증 후엔 MAIL_FROM 사용 권장
+    const from =
+      process.env.MAIL_FROM ||
+      "Orange Fanta <onboarding@resend.dev>"; // 개발/테스트용(네이버 수신률 낮음)
+
+    // 메일 발송
     await resend.emails.send({
-      from: "Orange Fanta <onboarding@resend.dev>", // 도메인 인증 전이면 resend.dev 사용
+      from,
       to: user.email,
       subject: "[Orange Fanta] 비밀번호 재설정 안내",
       html: `
-         <div style="font-family:Apple SD Gothic Neo, Malgun Gothic, sans-serif; line-height:1.6">
-    <h2 style="margin:0 0 12px 0">비밀번호 재설정</h2>
-    <p>안녕하세요, Orange Fanta 입니다.</p>
-    <p>비밀번호 재설정 요청을 받았습니다. 아래 버튼을 눌러 새 비밀번호를 설정하세요.</p>
+        <div style="font-family:Apple SD Gothic Neo, Malgun Gothic, sans-serif; line-height:1.6">
+          <h2 style="margin:0 0 12px 0">비밀번호 재설정</h2>
+          <p>안녕하세요, Orange Fanta 입니다.</p>
+          <p>비밀번호 재설정 요청을 받았습니다. 아래 버튼을 눌러 새 비밀번호를 설정하세요.</p>
 
-    <p style="margin:18px 0">
-      <a href="${resetLink}"
-         style="display:inline-block;background:#111827;color:#fff;text-decoration:none;
-                padding:10px 14px;border-radius:10px;font-weight:700">
-        비밀번호 재설정하기
-      </a>
-    </p>
+          <p style="margin:18px 0">
+            <a href="${resetLink}"
+              style="display:inline-block;background:#111827;color:#fff;text-decoration:none;
+                      padding:10px 14px;border-radius:10px;font-weight:700">
+              비밀번호 재설정하기
+            </a>
+          </p>
 
-    <p style="font-size:12px;color:#6b7280">
-      • 이 링크는 일정 시간 후 만료됩니다.<br/>
-      • 본인이 요청하지 않았다면 이 메일을 무시해도 됩니다.
-    </p>
+          <p style="font-size:12px;color:#6b7280">
+            • 이 링크는 1시간 후 만료됩니다.<br/>
+            • 본인이 요청하지 않았다면 이 메일을 무시해도 됩니다.
+          </p>
 
-    <hr style="border:none;border-top:1px solid #e5e7eb;margin:18px 0"/>
+          <hr style="border:none;border-top:1px solid #e5e7eb;margin:18px 0"/>
 
-    <p style="font-size:12px;color:#9ca3af">
-      Orange Fanta · 자동발송 메일입니다.
-    </p>
-  </div>
+          <p style="font-size:12px;color:#9ca3af">
+            Orange Fanta · 자동발송 메일입니다.
+          </p>
+        </div>
       `,
     });
 
     console.log("[RESET SENT]", user.email);
 
-    res.json({ ok: true, message: "메일을 발송했습니다. (스팸함도 확인)" });
+    return res.json({ ok: true, message: okMsg });
   })
 );
 
