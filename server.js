@@ -1,5 +1,7 @@
-import app from "./server.js";
+import app from "./api/index.js";
 
-export default function handler(req, res) {
-  return app(req, res);
-}
+const port = Number(process.env.PORT) || 3000;
+
+app.listen(port, () => {
+  console.log(`[server] listening on ${port}`);
+});
