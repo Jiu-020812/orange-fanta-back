@@ -12,6 +12,7 @@ import createItemsRouter from "./routes/items.js";
 import createRecordsRouter from "./routes/records.js";
 import createAdminRouter from "./routes/admin.js";
 import createJobsRouter from "./routes/jobs.js";
+import createIntegrationsRouter from "./routes/integrations.js";
 import {
   normalizeRecordInput,
   toYmd,
@@ -109,6 +110,14 @@ app.use(
 app.use(
   "/api/jobs",
   createJobsRouter({
+    prisma,
+    requireAuth,
+    asyncHandler,
+  })
+);
+app.use(
+  "/api/integrations",
+  createIntegrationsRouter({
     prisma,
     requireAuth,
     asyncHandler,
