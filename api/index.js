@@ -11,6 +11,7 @@ import createCategoriesRouter from "./routes/categories.js";
 import createItemsRouter from "./routes/items.js";
 import createRecordsRouter from "./routes/records.js";
 import createAdminRouter from "./routes/admin.js";
+import createJobsRouter from "./routes/jobs.js";
 import {
   normalizeRecordInput,
   toYmd,
@@ -100,6 +101,14 @@ app.use(
 app.use(
   "/api/admin",
   createAdminRouter({
+    prisma,
+    requireAuth,
+    asyncHandler,
+  })
+);
+app.use(
+  "/api/jobs",
+  createJobsRouter({
     prisma,
     requireAuth,
     asyncHandler,

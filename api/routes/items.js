@@ -1,5 +1,12 @@
 import express from "express";
 import { generateUniqueSku } from "../../utils/sku.js";
+import {
+  computeTargetQuantities,
+  enqueueInventorySync,
+  getCentralStock,
+} from "../services/inventorySync.js";
+
+const PROVIDERS = new Set(["NAVER", "COUPANG", "ELEVENST", "KREAM", "ETC"]);
 
 export default function createItemsRouter({
   prisma,
@@ -251,6 +258,141 @@ export default function createItemsRouter({
       await prisma.item.delete({ where: { id } });
 
       res.status(204).end();
+    })
+  );
+
+  // PUT /api/items/:itemId/policy
+  router.put(
+    "/:itemId/policy",
+    requireAuth,
+    asyncHandler(async (req, res) => {
+      const itemId = Number(req.params.itemId);
+      if (!Number.isFinite(itemId) || itemId <= 0) {
+        return res.status(400).json({ ok: false, message: "invalid itemId" });
+      }
+
+      const item = await prisma.item.findFirst({
+        where: { id: itemId, userId: req.userId },
+        select: { id: true },
+      });
+      if (!item) return res.status(404).json({ ok: false, message: "item not found" });
+
+      const mode = req.body?.mode === "EXCLUSIVE" ? "EXCLUSIVE" : "NORMAL";
+      const buffer = Number.isFinite(Number(req.body?.buffer)) ? Number(req.body.buffer) : undefined;
+      const minVisible = Number.isFinite(Number(req.body?.minVisible))
+        ? Number(req.body.minVisible)
+        : undefined;
+      const exclusiveProvider = req.body?.exclusiveProvider || null;
+
+      const policy = await prisma.itemInventoryPolicy.upsert({
+        where: { itemId },
+        create: {
+          userId: req.userId,
+          itemId,
+          mode,
+          ...(buffer !== undefined ? { buffer } : {}),
+          ...(minVisible !== undefined ? { minVisible } : {}),
+          ...(exclusiveProvider ? { exclusiveProvider } : {}),
+        },
+        update: {
+          mode,
+          ...(buffer !== undefined ? { buffer } : {}),
+          ...(minVisible !== undefined ? { minVisible } : {}),
+          exclusiveProvider: exclusiveProvider || null,
+        },
+      });
+
+      res.json({ ok: true, policy });
+    })
+  );
+
+  // POST /api/items/:itemId/listings
+  router.post(
+    "/:itemId/listings",
+    requireAuth,
+    asyncHandler(async (req, res) => {
+      const itemId = Number(req.params.itemId);
+      if (!Number.isFinite(itemId) || itemId <= 0) {
+        return res.status(400).json({ ok: false, message: "invalid itemId" });
+      }
+
+      const item = await prisma.item.findFirst({
+        where: { id: itemId, userId: req.userId },
+        select: { id: true },
+      });
+      if (!item) return res.status(404).json({ ok: false, message: "item not found" });
+
+      const provider = String(req.body?.provider || "").toUpperCase();
+      if (!provider) {
+        return res.status(400).json({ ok: false, message: "provider required" });
+      }
+      if (!PROVIDERS.has(provider)) {
+        return res.status(400).json({ ok: false, message: "provider invalid" });
+      }
+
+      const listing = await prisma.channelListing.upsert({
+        where: {
+          userId_provider_itemId: {
+            userId: req.userId,
+            provider,
+            itemId,
+          },
+        },
+        create: {
+          userId: req.userId,
+          provider,
+          itemId,
+          channelProductId: req.body?.channelProductId ?? null,
+          channelOptionId: req.body?.channelOptionId ?? null,
+          externalSku: req.body?.externalSku ?? null,
+          isActive: req.body?.isActive !== undefined ? Boolean(req.body.isActive) : true,
+        },
+        update: {
+          channelProductId: req.body?.channelProductId ?? null,
+          channelOptionId: req.body?.channelOptionId ?? null,
+          externalSku: req.body?.externalSku ?? null,
+          isActive: req.body?.isActive !== undefined ? Boolean(req.body.isActive) : true,
+        },
+      });
+
+      res.json({ ok: true, listing });
+    })
+  );
+
+  // POST /api/items/:itemId/sync-inventory
+  router.post(
+    "/:itemId/sync-inventory",
+    requireAuth,
+    asyncHandler(async (req, res) => {
+      const itemId = Number(req.params.itemId);
+      if (!Number.isFinite(itemId) || itemId <= 0) {
+        return res.status(400).json({ ok: false, message: "invalid itemId" });
+      }
+
+      const item = await prisma.item.findFirst({
+        where: { id: itemId, userId: req.userId },
+        select: { id: true },
+      });
+      if (!item) return res.status(404).json({ ok: false, message: "item not found" });
+
+      const targets = await computeTargetQuantities({
+        prisma,
+        userId: req.userId,
+        itemId,
+      });
+      const centralStock = await getCentralStock({
+        prisma,
+        userId: req.userId,
+        itemId,
+      });
+      const { enqueued } = await enqueueInventorySync({
+        prisma,
+        userId: req.userId,
+        itemId,
+        targets,
+      });
+
+      res.json({ ok: true, centralStock, targets, enqueued });
     })
   );
 

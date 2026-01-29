@@ -21,6 +21,18 @@ enum Provider {
   ETC
 }
 
+enum InventoryMode {
+  NORMAL
+  EXCLUSIVE
+}
+
+enum SyncJobStatus {
+  PENDING
+  RUNNING
+  SUCCEEDED
+  FAILED
+}
+
 model User {
   id            Int      @id @default(autoincrement())
   email         String   @unique
@@ -34,6 +46,9 @@ model User {
   items         Item[]
   records       Record[]
   externalSkuMaps ExternalSkuMap[]
+  channelListings ChannelListing[]
+  inventoryPolicies ItemInventoryPolicy[]
+  inventorySyncJobs InventorySyncJob[]
 
   sessions      Session[]         
   verifyTokens  EmailVerifyToken[] 
@@ -77,6 +92,9 @@ model Item {
 
   records Record[]
   externalSkuMaps ExternalSkuMap[]
+  channelListings ChannelListing[]
+  inventoryPolicy ItemInventoryPolicy?
+  inventorySyncJobs InventorySyncJob[]
 
   @@unique([userId, categoryId, legacyId])
   @@unique([userId, barcode])
@@ -158,4 +176,65 @@ model ExternalSkuMap {
 
   @@unique([userId, provider, externalSku])
   @@index([userId, itemId])
+}
+
+model ChannelListing {
+  id              Int      @id @default(autoincrement())
+  userId          Int
+  provider        Provider
+  itemId          Int
+  channelProductId String?
+  channelOptionId  String?
+  externalSku     String?
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  item Item @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  inventorySyncJobs InventorySyncJob[]
+
+  @@unique([userId, provider, itemId])
+  @@index([userId, provider])
+}
+
+model ItemInventoryPolicy {
+  id               Int           @id @default(autoincrement())
+  userId           Int
+  itemId           Int           @unique
+  mode             InventoryMode @default(NORMAL)
+  buffer           Int           @default(1)
+  minVisible       Int           @default(1)
+  exclusiveProvider Provider?
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  item Item @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  @@index([userId, mode])
+}
+
+model InventorySyncJob {
+  id         Int           @id @default(autoincrement())
+  userId     Int
+  provider   Provider
+  itemId     Int
+  listingId  Int?
+  targetQty  Int
+  status     SyncJobStatus @default(PENDING)
+  attempts   Int           @default(0)
+  lastError  String?
+  nextRunAt  DateTime      @default(now())
+  lockedAt   DateTime?
+  createdAt  DateTime      @default(now())
+  updatedAt  DateTime      @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  item Item @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  listing ChannelListing? @relation(fields: [listingId], references: [id], onDelete: SetNull)
+
+  @@unique([userId, provider, itemId])
+  @@index([status, nextRunAt])
+  @@index([userId, provider, itemId])
 }
