@@ -1,5 +1,5 @@
 export const PASSWORD_REGEX =
-  /^(?=.*[!@#$%^&*()[\]{};:'",.<>/?\\|`~+=_-]).{8,}$/;
+  /^(?=.*\d)(?=.*[!@#$%^&*()[\]{};:'",.<>/?\\|`~+=_-]).{8,}$/;
 
 export function validatePassword(pw) {
   if (typeof pw !== "string") return { ok: false, reason: "비밀번호가 비어있어요." };
