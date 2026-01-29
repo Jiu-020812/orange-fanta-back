@@ -247,6 +247,7 @@ app.post(
 
     const user = await prisma.user.findUnique({ where: { email: e } });
     if (!user) {
+      console.warn("[AUTH] login failed: user not found", { email: e });
       return res
         .status(401)
         .json({ ok: false, message: "이메일 또는 비밀번호 오류" });
@@ -254,6 +255,7 @@ app.post(
 
     const ok = await bcrypt.compare(p, user.password);
     if (!ok) {
+      console.warn("[AUTH] login failed: password mismatch", { email: e });
       return res
         .status(401)
         .json({ ok: false, message: "이메일 또는 비밀번호 오류" });
