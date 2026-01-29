@@ -13,6 +13,14 @@ enum RecordType {
   PURCHASE
 }
 
+enum Provider {
+  NAVER
+  COUPANG
+  ELEVENST
+  KREAM
+  ETC
+}
+
 model User {
   id            Int      @id @default(autoincrement())
   email         String   @unique
@@ -25,6 +33,7 @@ model User {
   categories    Category[]
   items         Item[]
   records       Record[]
+  externalSkuMaps ExternalSkuMap[]
 
   sessions      Session[]         
   verifyTokens  EmailVerifyToken[] 
@@ -53,6 +62,7 @@ model Item {
   size     String
   imageUrl String?
 
+  sku      String?
   legacyId String?
   memo     String?
   barcode  String?
@@ -66,9 +76,11 @@ model Item {
   category   Category @relation(fields: [categoryId], references: [id], onDelete: Restrict)
 
   records Record[]
+  externalSkuMaps ExternalSkuMap[]
 
   @@unique([userId, categoryId, legacyId])
   @@unique([userId, barcode])
+  @@unique([userId, sku])
   @@index([userId, categoryId])
 }
 
@@ -131,4 +143,19 @@ model PasswordResetToken {
 
   @@index([userId])
   @@index([expiresAt])
+}
+
+model ExternalSkuMap {
+  id          Int      @id @default(autoincrement())
+  userId      Int
+  provider    Provider
+  externalSku String
+  itemId      Int
+  createdAt   DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  item Item @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, provider, externalSku])
+  @@index([userId, itemId])
 }

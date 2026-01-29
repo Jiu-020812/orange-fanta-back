@@ -1,4 +1,5 @@
 import express from "express";
+import { generateUniqueSku } from "../../utils/sku.js";
 
 export default function createItemsRouter({
   prisma,
@@ -43,7 +44,15 @@ export default function createItemsRouter({
 
       const item = await prisma.item.findFirst({
         where: { userId: req.userId, barcode },
-        select: { id: true, name: true, size: true, imageUrl: true, barcode: true, categoryId: true },
+        select: {
+          id: true,
+          name: true,
+          size: true,
+          imageUrl: true,
+          barcode: true,
+          sku: true,
+          categoryId: true,
+        },
       });
 
       if (!item) return res.json({ ok: false, message: "NOT_FOUND" });
@@ -57,23 +66,25 @@ export default function createItemsRouter({
           imageUrl: item.imageUrl,
           barcode: item.barcode,
           categoryId: item.categoryId,
+          sku: item.sku,
         },
       });
     })
   );
 
-  // POST /api/items  body: { name, size, categoryId, imageUrl?, barcode? }
+  // POST /api/items  body: { name, size, categoryId, imageUrl?, barcode?, sku? }
   router.post(
     "/",
     requireAuth,
     asyncHandler(async (req, res) => {
-      const { name, size, categoryId, imageUrl, barcode } = req.body;
+      const { name, size, categoryId, imageUrl, barcode, sku } = req.body;
 
       const n = String(name ?? "").trim();
       const s = String(size ?? "").trim();
       const cid = Number(categoryId);
 
       const bc = barcode && String(barcode).trim() !== "" ? String(barcode).trim() : null;
+      const skuTrimmed = sku == null ? "" : String(sku).trim();
 
       if (!n || !s) {
         return res.status(400).json({ ok: false, message: "name/size required" });
@@ -102,6 +113,20 @@ export default function createItemsRouter({
         }
       }
 
+      let skuValue = null;
+      if (skuTrimmed) {
+        const dup = await prisma.item.findFirst({
+          where: { userId: req.userId, sku: skuTrimmed },
+          select: { id: true },
+        });
+        if (dup) {
+          return res.status(409).json({ ok: false, message: "이미 등록된 SKU입니다." });
+        }
+        skuValue = skuTrimmed;
+      } else {
+        skuValue = await generateUniqueSku({ prisma, userId: req.userId });
+      }
+
       const created = await prisma.item.create({
         data: {
           userId: req.userId,
@@ -110,6 +135,7 @@ export default function createItemsRouter({
           categoryId: cid,
           imageUrl: imageUrl || null,
           barcode: bc,
+          sku: skuValue,
         },
       });
 
@@ -133,7 +159,7 @@ export default function createItemsRouter({
       });
       if (!existing) return res.status(404).json({ ok: false, message: "item not found" });
 
-      const { name, size, imageUrl, memo, categoryId, barcode } = req.body;
+      const { name, size, imageUrl, memo, categoryId, barcode, sku } = req.body;
 
       // barcode 정리
       const bc =
@@ -152,6 +178,25 @@ export default function createItemsRouter({
         });
         if (dup) {
           return res.status(409).json({ ok: false, message: "이미 등록된 바코드입니다." });
+        }
+      }
+
+      const hasSku = Object.prototype.hasOwnProperty.call(req.body, "sku");
+      let nextSku = undefined;
+      if (hasSku) {
+        const trimmed = sku == null ? "" : String(sku).trim();
+        if (!trimmed) {
+          nextSku = await generateUniqueSku({ prisma, userId: req.userId });
+        } else {
+          nextSku = trimmed;
+        }
+
+        const dup = await prisma.item.findFirst({
+          where: { userId: req.userId, sku: nextSku, NOT: { id } },
+          select: { id: true },
+        });
+        if (dup) {
+          return res.status(409).json({ ok: false, message: "이미 등록된 SKU입니다." });
         }
       }
 
@@ -178,6 +223,7 @@ export default function createItemsRouter({
           ...(memo !== undefined ? { memo } : {}),
           ...(nextCategoryId !== undefined ? { categoryId: nextCategoryId } : {}),
           ...(bc !== undefined ? { barcode: bc } : {}),
+          ...(nextSku !== undefined ? { sku: nextSku } : {}),
         },
       });
 
@@ -227,6 +273,8 @@ export default function createItemsRouter({
           size: true,
           imageUrl: true,
           categoryId: true,
+          sku: true,
+          barcode: true,
           records: {
             where: { userId: req.userId },
             orderBy: [{ date: "asc" }, { id: "asc" }],
@@ -256,6 +304,8 @@ export default function createItemsRouter({
           size: item.size,
           imageUrl: item.imageUrl,
           categoryId: item.categoryId,
+          sku: item.sku,
+          barcode: item.barcode,
         },
         records: item.records,
         stock,

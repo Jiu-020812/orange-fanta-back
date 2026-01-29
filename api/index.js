@@ -12,6 +12,7 @@ import meRouter from "../routes/me.js";
 import createCategoriesRouter from "./routes/categories.js";
 import createItemsRouter from "./routes/items.js";
 import createRecordsRouter from "./routes/records.js";
+import createAdminRouter from "./routes/admin.js";
 import {
   normalizeRecordInput,
   toYmd,
@@ -533,6 +534,14 @@ app.use(
     asyncHandler,
     toYmd,
     calcStockAndPending,
+  })
+);
+app.use(
+  "/api/admin",
+  createAdminRouter({
+    prisma,
+    requireAuth,
+    asyncHandler,
   })
 );
 
