@@ -417,6 +417,8 @@ export default function createItemsRouter({
           categoryId: true,
           sku: true,
           barcode: true,
+          lowStockAlert: true,
+          lowStockThreshold: true,
           records: {
             where: { userId: req.userId },
             orderBy: [{ date: "asc" }, { id: "asc" }],
@@ -448,6 +450,8 @@ export default function createItemsRouter({
           categoryId: item.categoryId,
           sku: item.sku,
           barcode: item.barcode,
+          lowStockAlert: item.lowStockAlert,
+          lowStockThreshold: item.lowStockThreshold,
         },
         records: item.records,
         stock,
