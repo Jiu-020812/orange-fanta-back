@@ -677,5 +677,43 @@ export default function createItemsRouter({
     })
   );
 
+  // PATCH /api/items/:itemId/low-stock-alert
+  router.patch(
+    "/:itemId/low-stock-alert",
+    requireAuth,
+    asyncHandler(async (req, res) => {
+      const itemId = Number(req.params.itemId);
+      if (!Number.isFinite(itemId) || itemId <= 0) {
+        return res.status(400).json({ ok: false, message: "invalid itemId" });
+      }
+
+      const item = await prisma.item.findFirst({
+        where: { id: itemId, userId: req.userId },
+        select: { id: true },
+      });
+      if (!item) return res.status(404).json({ ok: false, message: "item not found" });
+
+      const lowStockAlert = req.body.lowStockAlert === true;
+      const lowStockThreshold = Number.isFinite(Number(req.body.lowStockThreshold))
+        ? Number(req.body.lowStockThreshold)
+        : undefined;
+
+      const updated = await prisma.item.update({
+        where: { id: itemId },
+        data: {
+          lowStockAlert,
+          ...(lowStockThreshold !== undefined ? { lowStockThreshold } : {}),
+        },
+        select: {
+          id: true,
+          lowStockAlert: true,
+          lowStockThreshold: true,
+        },
+      });
+
+      res.json({ ok: true, item: updated });
+    })
+  );
+
   return router;
 }

@@ -82,6 +82,9 @@ model Item {
   memo     String?
   barcode  String?
 
+  lowStockAlert   Boolean @default(false)
+  lowStockThreshold Int   @default(10)
+
   createdAt DateTime @default(now())
 
   userId Int

@@ -68,12 +68,47 @@ export default function createDashboardRouter({
         },
       });
 
+      // 최근 7일 판매 TOP 5
+      const recentOutRecords = await prisma.record.findMany({
+        where: {
+          userId,
+          type: "OUT",
+          date: {
+            gte: sevenDaysAgo,
+          },
+        },
+        include: {
+          item: {
+            select: {
+              name: true,
+            },
+          },
+        },
+      });
+
+      // 품목별 판매량 집계
+      const salesByItem = {};
+      for (const record of recentOutRecords) {
+        const itemName = record.item?.name || "알 수 없음";
+        if (!salesByItem[itemName]) {
+          salesByItem[itemName] = 0;
+        }
+        salesByItem[itemName] += Math.abs(record.count || 0);
+      }
+
+      // TOP 5 추출
+      const topSellingItems = Object.entries(salesByItem)
+        .map(([name, value]) => ({ name, value }))
+        .sort((a, b) => b.value - a.value)
+        .slice(0, 5);
+
       res.json({
         ok: true,
         totalItems,
         lowStockItems,
         recentInCount,
         recentOutCount,
+        topSellingItems,
       });
     })
   );
