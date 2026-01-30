@@ -14,6 +14,7 @@ import createAdminRouter from "./routes/admin.js";
 import createJobsRouter from "./routes/jobs.js";
 import createIntegrationsRouter from "./routes/integrations.js";
 import createDashboardRouter from "./routes/dashboard.js";
+import createReportsRouter from "./routes/reports.js";
 import {
   normalizeRecordInput,
   toYmd,
@@ -128,6 +129,16 @@ app.use(
 app.use(
   "/api/dashboard",
   createDashboardRouter({
+    prisma,
+    requireAuth,
+    asyncHandler,
+    calcStock,
+  })
+);
+
+app.use(
+  "/api/reports",
+  createReportsRouter({
     prisma,
     requireAuth,
     asyncHandler,
