@@ -6,7 +6,7 @@ import {
   getCentralStock,
 } from "../services/inventorySync.js";
 
-const PROVIDERS = new Set(["NAVER", "COUPANG", "ELEVENST", "KREAM", "ETC"]);
+const PROVIDERS = new Set(["NAVER", "COUPANG", "ELEVENST", "ETC"]);
 
 export default function createItemsRouter({
   prisma,

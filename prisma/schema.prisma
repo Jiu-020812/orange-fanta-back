@@ -17,7 +17,6 @@ enum Provider {
   NAVER
   COUPANG
   ELEVENST
-  KREAM
   ETC
 }
 

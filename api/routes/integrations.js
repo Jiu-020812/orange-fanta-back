@@ -1,6 +1,6 @@
 import express from "express";
 
-const PROVIDERS = new Set(["NAVER", "COUPANG", "ELEVENST", "KREAM", "ETC"]);
+const PROVIDERS = new Set(["NAVER", "COUPANG", "ELEVENST", "ETC"]);
 
 export default function createIntegrationsRouter({ prisma, requireAuth, asyncHandler }) {
   const router = express.Router();

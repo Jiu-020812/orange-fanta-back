@@ -1,7 +1,6 @@
 import { updateStock as updateNaverStock } from "./naver.js";
 import { updateStock as updateCoupangStock } from "./coupang.js";
 import { updateStock as updateElevenstStock } from "./elevenst.js";
-import { updateStock as updateKreamStock } from "./kream.js";
 import { updateStock as updateEtcStock } from "./etc.js";
 
 function getProviderClient(provider) {
@@ -12,8 +11,6 @@ function getProviderClient(provider) {
       return { updateStock: updateCoupangStock };
     case "ELEVENST":
       return { updateStock: updateElevenstStock };
-    case "KREAM":
-      return { updateStock: updateKreamStock };
     case "ETC":
       return { updateStock: updateEtcStock };
     default:
