@@ -18,6 +18,7 @@ import createReportsRouter from "./routes/reports.js";
 import warehousesRouter from "./routes/warehouses.js";
 import stockTransfersRouter from "./routes/stock-transfers.js";
 import stockAuditsRouter from "./routes/stock-audits.js";
+import backupRouter from "./routes/backup.js";
 import {
   normalizeRecordInput,
   toYmd,
@@ -152,6 +153,7 @@ app.use(
 app.use("/api/warehouses", warehousesRouter);
 app.use("/api/stock-transfers", stockTransfersRouter);
 app.use("/api/stock-audits", stockAuditsRouter);
+app.use("/api/backup", backupRouter);
 
 /* ================= USER DELETION ================= */
 app.delete(
