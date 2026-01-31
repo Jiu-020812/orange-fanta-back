@@ -26,6 +26,10 @@ export default function createDashboardRouter({
         where: { userId },
         select: {
           id: true,
+          name: true,
+          size: true,
+          imageUrl: true,
+          barcode: true,
           records: {
             select: {
               type: true,
@@ -35,12 +39,21 @@ export default function createDashboardRouter({
         },
       });
 
-      // 재고 부족 품목 수 계산
-      let lowStockItems = 0;
+      // 재고 부족 품목 수 및 목록 계산
+      let lowStockCount = 0;
+      const lowStockItemsList = [];
       for (const item of items) {
         const stock = calcStock(item.records);
         if (stock <= lowStockThreshold) {
-          lowStockItems++;
+          lowStockCount++;
+          lowStockItemsList.push({
+            id: item.id,
+            name: item.name,
+            size: item.size,
+            imageUrl: item.imageUrl,
+            barcode: item.barcode,
+            currentStock: stock,
+          });
         }
       }
 
@@ -105,7 +118,8 @@ export default function createDashboardRouter({
       res.json({
         ok: true,
         totalItems,
-        lowStockItems,
+        lowStockItems: lowStockCount,
+        lowStockItemsList,
         recentInCount,
         recentOutCount,
         topSellingItems,
