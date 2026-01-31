@@ -225,6 +225,7 @@ export default function createAuthRouter({ asyncHandler }) {
 
       res.cookie("token", token, COOKIE_OPTIONS).json({
         ok: true,
+        token,
         user: { id: user.id, email: user.email, name: user.name },
       });
     })

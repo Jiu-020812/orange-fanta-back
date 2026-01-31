@@ -50,10 +50,14 @@ model User {
   inventorySyncJobs InventorySyncJob[]
   channelConnections ChannelConnection[]
 
-  sessions      Session[]         
-  verifyTokens  EmailVerifyToken[] 
+  sessions      Session[]
+  verifyTokens  EmailVerifyToken[]
 
  passwordResetTokens PasswordResetToken[]
+
+  warehouses    Warehouse[]
+  stockTransfers StockTransfer[]
+  stockAudits   StockAudit[]
 }
 
 model Category {
@@ -98,6 +102,8 @@ model Item {
   channelListings ChannelListing[]
   inventoryPolicy ItemInventoryPolicy?
   inventorySyncJobs InventorySyncJob[]
+  stockTransfers StockTransfer[]
+  stockAudits StockAudit[]
 
   @@unique([userId, categoryId, legacyId])
   @@unique([userId, barcode])
@@ -255,4 +261,68 @@ model ChannelConnection {
 
   @@unique([userId, provider])
   @@index([userId, provider])
+}
+
+model Warehouse {
+  id          Int      @id @default(autoincrement())
+  name        String
+  location    String?
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  userId Int
+  user   User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  transfersFrom StockTransfer[] @relation("FromWarehouse")
+  transfersTo   StockTransfer[] @relation("ToWarehouse")
+  stockAudits   StockAudit[]
+
+  @@unique([userId, name])
+  @@index([userId])
+}
+
+model StockTransfer {
+  id          Int      @id @default(autoincrement())
+  quantity    Int
+  reason      String?
+  status      String   @default("COMPLETED")
+  createdAt   DateTime @default(now())
+
+  userId Int
+  user   User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  itemId Int
+  item   Item @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  fromWarehouseId Int
+  fromWarehouse   Warehouse @relation("FromWarehouse", fields: [fromWarehouseId], references: [id], onDelete: Restrict)
+
+  toWarehouseId Int
+  toWarehouse   Warehouse @relation("ToWarehouse", fields: [toWarehouseId], references: [id], onDelete: Restrict)
+
+  @@index([userId, createdAt])
+  @@index([itemId])
+}
+
+model StockAudit {
+  id               Int      @id @default(autoincrement())
+  expectedQuantity Int
+  actualQuantity   Int
+  difference       Int
+  notes            String?
+  createdAt        DateTime @default(now())
+
+  userId Int
+  user   User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  itemId Int
+  item   Item @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  warehouseId Int
+  warehouse   Warehouse @relation(fields: [warehouseId], references: [id], onDelete: Restrict)
+
+  @@index([userId, createdAt])
+  @@index([itemId])
+  @@index([warehouseId])
 }

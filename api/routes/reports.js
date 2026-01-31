@@ -8,6 +8,42 @@ export default function createReportsRouter({
 }) {
   const router = Router();
 
+  // 날짜 범위 계산 헬퍼 함수
+  function getDateRange(query) {
+    const { dateRange, startDate: customStart, endDate: customEnd } = query;
+
+    // 커스텀 날짜 범위가 제공된 경우
+    if (customStart && customEnd) {
+      return {
+        startDate: new Date(customStart),
+        endDate: new Date(customEnd),
+      };
+    }
+
+    // 기본 날짜 범위
+    const now = new Date();
+    let startDate = new Date();
+
+    switch (dateRange) {
+      case "7days":
+        startDate.setDate(now.getDate() - 7);
+        break;
+      case "30days":
+        startDate.setDate(now.getDate() - 30);
+        break;
+      case "90days":
+        startDate.setDate(now.getDate() - 90);
+        break;
+      case "1year":
+        startDate.setFullYear(now.getFullYear() - 1);
+        break;
+      default:
+        startDate.setDate(now.getDate() - 7);
+    }
+
+    return { startDate, endDate: now };
+  }
+
   // GET /api/reports/sales-analysis
   // 매출 분석 데이터 (일별 매출 및 수익)
   router.get(
@@ -15,28 +51,7 @@ export default function createReportsRouter({
     requireAuth,
     asyncHandler(async (req, res) => {
       const userId = req.userId;
-      const { dateRange = "7days" } = req.query;
-
-      // 날짜 범위 계산
-      const now = new Date();
-      let startDate = new Date();
-
-      switch (dateRange) {
-        case "7days":
-          startDate.setDate(now.getDate() - 7);
-          break;
-        case "30days":
-          startDate.setDate(now.getDate() - 30);
-          break;
-        case "90days":
-          startDate.setDate(now.getDate() - 90);
-          break;
-        case "1year":
-          startDate.setFullYear(now.getFullYear() - 1);
-          break;
-        default:
-          startDate.setDate(now.getDate() - 7);
-      }
+      const { startDate, endDate } = getDateRange(req.query);
 
       // 출고(판매) 데이터 가져오기
       const outRecords = await prisma.record.findMany({
@@ -45,6 +60,7 @@ export default function createReportsRouter({
           type: "OUT",
           date: {
             gte: startDate,
+            lte: endDate,
           },
         },
         select: {
@@ -64,6 +80,7 @@ export default function createReportsRouter({
           type: "PURCHASE",
           date: {
             gte: startDate,
+            lte: endDate,
           },
         },
         select: {
@@ -123,27 +140,7 @@ export default function createReportsRouter({
     requireAuth,
     asyncHandler(async (req, res) => {
       const userId = req.userId;
-      const { dateRange = "7days" } = req.query;
-
-      const now = new Date();
-      let startDate = new Date();
-
-      switch (dateRange) {
-        case "7days":
-          startDate.setDate(now.getDate() - 7);
-          break;
-        case "30days":
-          startDate.setDate(now.getDate() - 30);
-          break;
-        case "90days":
-          startDate.setDate(now.getDate() - 90);
-          break;
-        case "1year":
-          startDate.setFullYear(now.getFullYear() - 1);
-          break;
-        default:
-          startDate.setDate(now.getDate() - 7);
-      }
+      const { startDate, endDate } = getDateRange(req.query);
 
       // 모든 품목 가져오기
       const items = await prisma.item.findMany({
@@ -203,34 +200,14 @@ export default function createReportsRouter({
     requireAuth,
     asyncHandler(async (req, res) => {
       const userId = req.userId;
-      const { dateRange = "7days" } = req.query;
-
-      const now = new Date();
-      let startDate = new Date();
-
-      switch (dateRange) {
-        case "7days":
-          startDate.setDate(now.getDate() - 7);
-          break;
-        case "30days":
-          startDate.setDate(now.getDate() - 30);
-          break;
-        case "90days":
-          startDate.setDate(now.getDate() - 90);
-          break;
-        case "1year":
-          startDate.setFullYear(now.getFullYear() - 1);
-          break;
-        default:
-          startDate.setDate(now.getDate() - 7);
-      }
+      const { startDate, endDate } = getDateRange(req.query);
 
       // 매출 (판매)
       const outRecords = await prisma.record.findMany({
         where: {
           userId,
           type: "OUT",
-          date: { gte: startDate },
+          date: { gte: startDate, lte: endDate },
         },
         select: {
           count: true,
@@ -247,7 +224,7 @@ export default function createReportsRouter({
         where: {
           userId,
           type: "PURCHASE",
-          date: { gte: startDate },
+          date: { gte: startDate, lte: endDate },
         },
         select: {
           count: true,
@@ -283,33 +260,13 @@ export default function createReportsRouter({
     requireAuth,
     asyncHandler(async (req, res) => {
       const userId = req.userId;
-      const { dateRange = "7days" } = req.query;
-
-      const now = new Date();
-      let startDate = new Date();
-
-      switch (dateRange) {
-        case "7days":
-          startDate.setDate(now.getDate() - 7);
-          break;
-        case "30days":
-          startDate.setDate(now.getDate() - 30);
-          break;
-        case "90days":
-          startDate.setDate(now.getDate() - 90);
-          break;
-        case "1year":
-          startDate.setFullYear(now.getFullYear() - 1);
-          break;
-        default:
-          startDate.setDate(now.getDate() - 7);
-      }
+      const { startDate, endDate } = getDateRange(req.query);
 
       const outRecords = await prisma.record.findMany({
         where: {
           userId,
           type: "OUT",
-          date: { gte: startDate },
+          date: { gte: startDate, lte: endDate },
         },
         include: {
           item: {
@@ -350,33 +307,13 @@ export default function createReportsRouter({
     requireAuth,
     asyncHandler(async (req, res) => {
       const userId = req.userId;
-      const { dateRange = "7days" } = req.query;
-
-      const now = new Date();
-      let startDate = new Date();
-
-      switch (dateRange) {
-        case "7days":
-          startDate.setDate(now.getDate() - 7);
-          break;
-        case "30days":
-          startDate.setDate(now.getDate() - 30);
-          break;
-        case "90days":
-          startDate.setDate(now.getDate() - 90);
-          break;
-        case "1year":
-          startDate.setFullYear(now.getFullYear() - 1);
-          break;
-        default:
-          startDate.setDate(now.getDate() - 7);
-      }
+      const { startDate, endDate } = getDateRange(req.query);
 
       const outRecords = await prisma.record.findMany({
         where: {
           userId,
           type: "OUT",
-          date: { gte: startDate },
+          date: { gte: startDate, lte: endDate },
         },
         include: {
           item: {

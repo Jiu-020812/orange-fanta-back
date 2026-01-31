@@ -15,6 +15,9 @@ import createJobsRouter from "./routes/jobs.js";
 import createIntegrationsRouter from "./routes/integrations.js";
 import createDashboardRouter from "./routes/dashboard.js";
 import createReportsRouter from "./routes/reports.js";
+import warehousesRouter from "./routes/warehouses.js";
+import stockTransfersRouter from "./routes/stock-transfers.js";
+import stockAuditsRouter from "./routes/stock-audits.js";
 import {
   normalizeRecordInput,
   toYmd,
@@ -145,6 +148,10 @@ app.use(
     calcStock,
   })
 );
+
+app.use("/api/warehouses", warehousesRouter);
+app.use("/api/stock-transfers", stockTransfersRouter);
+app.use("/api/stock-audits", stockAuditsRouter);
 
 /* ================= USER DELETION ================= */
 app.delete(
